@@ -17,6 +17,7 @@ from webdriver_manager.chrome import ChromeDriverManager
 import pandas as pd
 import time
 import re
+from requests.exceptions import RequestException
 
 def clean_content(content):
     """
@@ -25,7 +26,7 @@ def clean_content(content):
     if not content:
         return "No Content"
     
-    # Remove common headers and footers
+    # Remove common headers, footers, and redundant information
     patterns_to_remove = [
         r"Welcome, Guest.*?LOGIN!",  # Remove login/register prompts
         r"Stats:.*?Date:",           # Remove stats and date info
@@ -37,59 +38,58 @@ def clean_content(content):
     for pattern in patterns_to_remove:
         content = re.sub(pattern, " ", content, flags=re.IGNORECASE | re.DOTALL)
     
-    # Strip leading/trailing whitespace and limit content length
-    content = content.strip()[:1000]
+    # Strip leading/trailing whitespace
+    content = content.strip()
     return content
 
 def scrape_single_url(url):
     try:
-        if "nairaland.com" in url:
-            # Use requests for static pages with a User-Agent header
-            headers = {
-                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-            }
-            response = requests.get(url, headers=headers, timeout=10)
-            response.raise_for_status()
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+        
+        all_posts = []
+        while url:
+            # Retry up to 3 times in case of timeouts or network issues
+            for attempt in range(3):
+                try:
+                    response = requests.get(url, headers=headers, timeout=10)
+                    response.raise_for_status()
+                    break
+                except RequestException as e:
+                    print(f"Attempt {attempt + 1} failed for {url}: {str(e)}")
+                    time.sleep(2)  # Wait before retrying
+            else:
+                print(f"Failed to retrieve {url} after 3 attempts.")
+                return None
+            
             soup = BeautifulSoup(response.content, "html.parser")
             
             # Extract specific content
             title = soup.title.string if soup.title else "No Title"
-            raw_content = soup.get_text(separator="\n")
-            content = clean_content(raw_content)  # Clean the content
             
-            return {
-                "URL": url,
-                "Title": title,
-                "Content": content,
-                "Timestamp": pd.Timestamp.now()
-            }
-        else:
-            # Use Selenium for dynamic pages
-            chrome_options = Options()
-            chrome_options.add_argument("--headless")  # Run in headless mode
-            chrome_options.add_argument("--disable-gpu")
-            chrome_options.add_argument("--no-sandbox")
-            chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+            # Target specific sections of the page (e.g., posts in a forum thread)
+            for post in soup.find_all("div", class_="narrow"):
+                post_text = post.get_text(separator="\n").strip()
+                all_posts.append(post_text)
             
-            driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
-            driver.get(url)
-            time.sleep(5)  # Wait for page to load
-            
-            # Parse the page source with BeautifulSoup
-            soup = BeautifulSoup(driver.page_source, "html.parser")
-            driver.quit()
-            
-            # Extract specific content
-            title = soup.title.string if soup.title else "No Title"
-            raw_content = soup.get_text(separator="\n")
-            content = clean_content(raw_content)  # Clean the content
-            
-            return {
-                "URL": url,
-                "Title": title,
-                "Content": content,
-                "Timestamp": pd.Timestamp.now()
-            }
+            # Check for the next page link (pagination)
+            next_page_link = soup.find("a", string="Next")
+            if next_page_link:
+                url = "https://www.nairaland.com" + next_page_link["href"]
+            else:
+                url = None
+        
+        # Combine all posts into a single string
+        content = "\n".join(all_posts)
+        content = clean_content(content)  # Clean the content
+        
+        return {
+            "URL": url,
+            "Title": title,
+            "Content": content,
+            "Timestamp": pd.Timestamp.now()
+        }
     except Exception as e:
         print(f"Error scraping {url}: {str(e)}")
         return None
