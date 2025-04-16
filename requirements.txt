@@ -6,3 +6,4 @@ pandas>=1.5,<2.0
 wordcloud==1.9.2
 matplotlib==3.7.2
 webdriver-manager==4.0.0
+numpy>=1.21.0
