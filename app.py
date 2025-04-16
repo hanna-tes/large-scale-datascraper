@@ -32,17 +32,14 @@ st.markdown(
         background-repeat: no-repeat;
         background-attachment: fixed;
     }}
-    /* Ensure text is visible on the background */
+    /* Change text color to black */
     .stApp {{
-        background-color: rgba(255, 255, 255, 0.8); /* Semi-transparent white overlay */
-        border-radius: 10px;
-        padding: 20px;
+        color: black; /* Set text color to black */
     }}
     </style>
     """,
     unsafe_allow_html=True,
 )
-
 # Title and description
 st.title("Large-Scale Data Scraper")
 st.write("Enter up to 30 URLs to scrape their content and analyze coordination patterns.")
