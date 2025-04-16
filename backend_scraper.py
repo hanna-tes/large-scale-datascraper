@@ -20,8 +20,11 @@ import time
 def scrape_single_url(url):
     try:
         if "nairaland.com" in url:
-            # Use requests for static pages
-            response = requests.get(url, timeout=10)
+            # Use requests for static pages with a User-Agent header
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+            }
+            response = requests.get(url, headers=headers, timeout=10)
             response.raise_for_status()  # Raise an error for bad responses (4xx or 5xx)
             soup = BeautifulSoup(response.content, "html.parser")
             
@@ -38,7 +41,11 @@ def scrape_single_url(url):
         else:
             # Use Selenium for dynamic pages
             chrome_options = Options()
-            chrome_options.add_argument("--headless")
+            chrome_options.add_argument("--headless")  # Run in headless mode
+            chrome_options.add_argument("--disable-gpu")
+            chrome_options.add_argument("--no-sandbox")
+            chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36")
+            
             driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
             driver.get(url)
             time.sleep(5)  # Wait for page to load
