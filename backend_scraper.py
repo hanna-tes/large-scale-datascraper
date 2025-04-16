@@ -60,15 +60,20 @@ def scrape_single_url(url):
 
 def scrape_urls(urls):
     scraped_data = []
+    total_urls = len(urls)
     
-    def worker(url):
+    def worker(url, index):
         result = scrape_single_url(url)
         if result:
             scraped_data.append(result)
+        
+        # Update progress bar
+        progress_bar.progress((index + 1) / total_urls)
+        status_text.write(f"Scraping {index + 1}/{total_urls} URLs...")
     
     threads = []
-    for url in urls:
-        thread = threading.Thread(target=worker, args=(url,))
+    for i, url in enumerate(urls):
+        thread = threading.Thread(target=worker, args=(url, i))
         threads.append(thread)
         thread.start()
     
