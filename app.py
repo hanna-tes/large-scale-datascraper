@@ -20,8 +20,23 @@ st.set_page_config(
     initial_sidebar_state="collapsed"
 )
 
+
+import streamlit as st
+import pandas as pd
+from backend_scraper import scrape_urls
+from wordcloud import WordCloud
+import matplotlib.pyplot as plt
+
+# Set custom theme
+st.set_page_config(
+    page_title="Large-Scale Data Scraper",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
+
 # Custom CSS for background image
 background_image_url = "https://images.pexels.com/photos/1103970/pexels-photo-1103970.jpeg?auto=compress&cs=tinysrgb&w=1920&h=1080&dpr=1"
+
 st.markdown(
     f"""
     <style>
@@ -30,6 +45,12 @@ st.markdown(
         background-size: cover;
         background-repeat: no-repeat;
         background-attachment: fixed;
+    }}
+    /* Ensure text is visible on the background */
+    .stApp {{
+        background-color: rgba(255, 255, 255, 0.8); /* Semi-transparent white overlay */
+        border-radius: 10px;
+        padding: 20px;
     }}
     </style>
     """,
@@ -56,11 +77,11 @@ if st.button("Scrape URLs"):
         status_text = st.empty()
         
         # Scrape URLs
-        scraped_data = scrape_urls(urls_list)
+        scraped_data = scrape_urls(urls_list, progress_bar, status_text)
         
         # Update progress bar
         progress_bar.progress(100)
-        status_text.write("Scraping completed!")
+        status_text.text("Scraping completed!")
         
         # Display results
         if scraped_data:
