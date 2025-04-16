@@ -11,6 +11,8 @@ import pandas as pd
 from backend_scraper import scrape_urls
 from wordcloud import WordCloud
 import matplotlib.pyplot as plt
+import base64
+import io
 
 # Set custom theme
 st.set_page_config(
@@ -85,6 +87,14 @@ if st.button("Scrape URLs"):
             plt.imshow(wordcloud, interpolation="bilinear")
             plt.axis("off")
             st.pyplot(plt)
+            
+            # Download button for CSV
+            csv_buffer = io.StringIO()
+            df.to_csv(csv_buffer, index=False)
+            csv_buffer.seek(0)
+            b64 = base64.b64encode(csv_buffer.getvalue().encode()).decode()
+            href = f'<a href="data:text/csv;base64,{b64}" download="scraped_data.csv">Download CSV File</a>'
+            st.markdown(href, unsafe_allow_html=True)
         else:
             st.warning("No data was scraped. Possible reasons:")
             st.write("- The URLs may be invalid or inaccessible.")
