@@ -9,49 +9,72 @@ Original file is located at
 
 import streamlit as st
 import pandas as pd
-from backend_scraper import scrape_urls  # Import the multithreaded scraper
+from backend_scraper import scrape_urls
 from wordcloud import WordCloud
 import matplotlib.pyplot as plt
+
+# Set custom theme
+st.set_page_config(
+    page_title="Large-Scale Data Scraper",
+    layout="wide",
+    initial_sidebar_state="collapsed"
+)
+
+# Custom CSS for background image
+background_image_url = "https://raw.githubusercontent.com/your-username/repo-name/main/assets/background.jpg"
+
+st.markdown(
+    f"""
+    <style>
+    body {{
+        background-image: url('{background_image_url}');
+        background-size: cover;
+        background-repeat: no-repeat;
+        background-attachment: fixed;
+    }}
+    </style>
+    """,
+    unsafe_allow_html=True,
+)
 
 # Title and description
 st.title("Large-Scale Data Scraper")
 st.write("Enter up to 30 URLs to scrape their content and analyze coordination patterns.")
 
-# Input for URLs
-urls = st.text_area("Enter URLs (one per line):", height=150)
+# Input field for URLs
+urls = st.text_area("Enter URLs (one per line):", height=200)
+urls_list = [url.strip() for url in urls.split("\n") if url.strip()]
 
-# Button to start scraping
+# Button to trigger scraping
 if st.button("Scrape URLs"):
-    if urls.strip() == "":
+    if not urls_list:
         st.error("Please enter at least one URL.")
+    elif len(urls_list) > 30:
+        st.error("You can only scrape up to 30 URLs at once.")
     else:
-        # Split URLs into a list
-        url_list = [url.strip() for url in urls.split("\n") if url.strip()]
-
-        # Limit to 30 URLs
-        if len(url_list) > 30:
-            st.error("You can only scrape up to 30 URLs at once.")
+        # Display progress bar
+        progress_bar = st.progress(0)
+        status_text = st.empty()
+        
+        # Scrape URLs
+        scraped_data = scrape_urls(urls_list)
+        
+        # Update progress bar
+        progress_bar.progress(100)
+        status_text.write("Scraping completed!")
+        
+        # Display results
+        if scraped_data:
+            df = pd.DataFrame(scraped_data)
+            st.write("Preview of Scraped Data:")
+            st.dataframe(df)
+            
+            # Generate word cloud
+            all_content = " ".join([item["Content"] for item in scraped_data])
+            wordcloud = WordCloud(width=800, height=400, background_color="white").generate(all_content)
+            plt.figure(figsize=(10, 5))
+            plt.imshow(wordcloud, interpolation="bilinear")
+            plt.axis("off")
+            st.pyplot(plt)
         else:
-            # Start scraping
-            st.write(f"Scraping {len(url_list)} URLs...")
-            progress_bar = st.progress(0)
-            scraped_data = scrape_urls(url_list)
-
-            # Save data to CSV
-            if scraped_data:
-                df = pd.DataFrame(scraped_data)
-                df.to_csv("scraped_data.csv", index=False)
-                st.success("Scraping completed! Data saved to `scraped_data.csv`.")
-
-                # Display the first few rows of the data
-                st.write("Preview of Scraped Data:")
-                st.dataframe(df.head())
-
-                # Generate word cloud
-                all_content = " ".join([item["Content"] for item in scraped_data])
-                st.write("Word Cloud of Scraped Content:")
-                wordcloud = WordCloud(width=800, height=400, background_color="white").generate(all_content)
-                plt.figure(figsize=(10, 5))
-                plt.imshow(wordcloud, interpolation="bilinear")
-                plt.axis("off")
-                st.pyplot(plt)
+            st.warning("No data was scraped. Please check the URLs and try again.")
