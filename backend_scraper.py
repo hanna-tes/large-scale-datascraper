@@ -16,6 +16,30 @@ from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 import pandas as pd
 import time
+import re
+
+def clean_content(content):
+    """
+    Cleans the scraped content by removing unnecessary text and formatting.
+    """
+    if not content:
+        return "No Content"
+    
+    # Remove common headers and footers
+    patterns_to_remove = [
+        r"Welcome, Guest.*?LOGIN!",  # Remove login/register prompts
+        r"Stats:.*?Date:",           # Remove stats and date info
+        r"Nairaland Forum.*?Profile",# Remove profile-related text
+        r"\n+",                      # Remove excessive newlines
+        r"\s{2,}"                    # Remove extra spaces
+    ]
+    
+    for pattern in patterns_to_remove:
+        content = re.sub(pattern, " ", content, flags=re.IGNORECASE | re.DOTALL)
+    
+    # Strip leading/trailing whitespace and limit content length
+    content = content.strip()[:1000]
+    return content
 
 def scrape_single_url(url):
     try:
@@ -25,12 +49,13 @@ def scrape_single_url(url):
                 "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
             }
             response = requests.get(url, headers=headers, timeout=10)
-            response.raise_for_status()  # Raise an error for bad responses (4xx or 5xx)
+            response.raise_for_status()
             soup = BeautifulSoup(response.content, "html.parser")
             
-            # Extract content
+            # Extract specific content
             title = soup.title.string if soup.title else "No Title"
-            content = soup.get_text(separator="\n")[:1000]  # Limit content size
+            raw_content = soup.get_text(separator="\n")
+            content = clean_content(raw_content)  # Clean the content
             
             return {
                 "URL": url,
@@ -49,12 +74,15 @@ def scrape_single_url(url):
             driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
             driver.get(url)
             time.sleep(5)  # Wait for page to load
+            
+            # Parse the page source with BeautifulSoup
             soup = BeautifulSoup(driver.page_source, "html.parser")
             driver.quit()
             
-            # Extract content
+            # Extract specific content
             title = soup.title.string if soup.title else "No Title"
-            content = soup.get_text(separator="\n")[:1000]  # Limit content size
+            raw_content = soup.get_text(separator="\n")
+            content = clean_content(raw_content)  # Clean the content
             
             return {
                 "URL": url,
