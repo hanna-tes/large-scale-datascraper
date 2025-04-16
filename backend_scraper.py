@@ -15,6 +15,7 @@ from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
 import pandas as pd
+import time
 
 def scrape_single_url(url):
     try:
@@ -58,7 +59,7 @@ def scrape_single_url(url):
         print(f"Error scraping {url}: {str(e)}")
         return None
 
-def scrape_urls(urls):
+def scrape_urls(urls, progress_bar, status_text):
     scraped_data = []
     total_urls = len(urls)
     
@@ -69,7 +70,7 @@ def scrape_urls(urls):
         
         # Update progress bar
         progress_bar.progress((index + 1) / total_urls)
-        status_text.write(f"Scraping {index + 1}/{total_urls} URLs...")
+        status_text.text(f"Scraping {index + 1}/{total_urls} URLs...")
     
     threads = []
     for i, url in enumerate(urls):
