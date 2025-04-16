@@ -21,8 +21,7 @@ st.set_page_config(
 )
 
 # Custom CSS for background image
-background_image_url = "https://raw.githubusercontent.com/your-username/repo-name/main/assets/background.jpg"
-
+background_image_url = "https://images.pexels.com/photos/1103970/pexels-photo-1103970.jpeg?auto=compress&cs=tinysrgb&w=1920&h=1080&dpr=1"
 st.markdown(
     f"""
     <style>
