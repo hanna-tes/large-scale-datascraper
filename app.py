@@ -32,9 +32,11 @@ st.markdown(
         background-repeat: no-repeat;
         background-attachment: fixed;
     }}
-    /* Change text color to black */
     .stApp {{
-        color: black; /* Set text color to black */
+        background-color: rgba(0, 0, 0, 0.6); /* Semi-transparent overlay */
+        color: white; /* White text for contrast */
+        border-radius: 10px;
+        padding: 20px;
     }}
     </style>
     """,
