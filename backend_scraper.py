@@ -22,7 +22,7 @@ def scrape_single_url(url):
         if "nairaland.com" in url:
             # Use requests for static pages
             response = requests.get(url, timeout=10)
-            response.raise_for_status()
+            response.raise_for_status()  # Raise an error for bad responses (4xx or 5xx)
             soup = BeautifulSoup(response.content, "html.parser")
             
             # Extract content
