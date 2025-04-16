@@ -14,52 +14,65 @@ from selenium import webdriver
 from selenium.webdriver.chrome.options import Options
 from selenium.webdriver.chrome.service import Service
 from webdriver_manager.chrome import ChromeDriverManager
-import time
 import pandas as pd
 
-def scrape_single_url(url, result_list):
+def scrape_single_url(url):
     try:
-        if "chat.chatbotapp.ai" in url:
+        if "nairaland.com" in url:
+            # Use requests for static pages
+            response = requests.get(url, timeout=10)
+            response.raise_for_status()
+            soup = BeautifulSoup(response.content, "html.parser")
+            
+            # Extract content
+            title = soup.title.string if soup.title else "No Title"
+            content = soup.get_text(separator="\n")[:1000]  # Limit content size
+            
+            return {
+                "URL": url,
+                "Title": title,
+                "Content": content,
+                "Timestamp": pd.Timestamp.now()
+            }
+        else:
             # Use Selenium for dynamic pages
             chrome_options = Options()
-            chrome_options.add_argument("--headless")  # Run in headless mode
+            chrome_options.add_argument("--headless")
             driver = webdriver.Chrome(service=Service(ChromeDriverManager().install()), options=chrome_options)
             driver.get(url)
             time.sleep(5)  # Wait for page to load
             soup = BeautifulSoup(driver.page_source, "html.parser")
             driver.quit()
-        else:
-            # Use requests and BeautifulSoup for static pages
-            response = requests.get(url, timeout=10)
-            response.raise_for_status()
-            soup = BeautifulSoup(response.content, "html.parser")
-
-        # Extract content
-        title = soup.title.string if soup.title else "No Title"
-        content = soup.get_text(separator="\n")[:1000]  # Limit content size
-
-        # Append to shared result list
-        result_list.append({
-            "URL": url,
-            "Title": title,
-            "Content": content,
-            "Timestamp": pd.Timestamp.now()
-        })
+            
+            # Extract content
+            title = soup.title.string if soup.title else "No Title"
+            content = soup.get_text(separator="\n")[:1000]  # Limit content size
+            
+            return {
+                "URL": url,
+                "Title": title,
+                "Content": content,
+                "Timestamp": pd.Timestamp.now()
+            }
     except Exception as e:
         print(f"Error scraping {url}: {str(e)}")
+        return None
 
 def scrape_urls(urls):
-    threads = []
     scraped_data = []
-
-    # Create and start threads for each URL
+    
+    def worker(url):
+        result = scrape_single_url(url)
+        if result:
+            scraped_data.append(result)
+    
+    threads = []
     for url in urls:
-        thread = threading.Thread(target=scrape_single_url, args=(url, scraped_data))
+        thread = threading.Thread(target=worker, args=(url,))
         threads.append(thread)
         thread.start()
-
-    # Wait for all threads to complete
+    
     for thread in threads:
         thread.join()
-
+    
     return scraped_data
