@@ -121,18 +121,6 @@ if st.button("Scrape URLs"):
             st.write("Most Common Topics:")
             st.table(title_counts.head(5))
             
-            # Top contributors (based on URLs)
-            urls = [item["URL"] for item in scraped_data]
-            url_counts = pd.Series(urls).value_counts()
-            st.write("Top Contributors:")
-            st.table(url_counts.head(5))
-            
-            # Most frequent entities
-            all_entities = [entity for item in scraped_data for entity in item["Entities"]]
-            entity_counts = pd.Series(all_entities).value_counts()
-            st.write("Most Frequent Entities:")
-            st.table(entity_counts.head(5))
-            
             # Download button for CSV
             csv_buffer = io.StringIO()
             df.to_csv(csv_buffer, index=False)
