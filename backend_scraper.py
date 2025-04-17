@@ -22,8 +22,21 @@ from sklearn.metrics.pairwise import cosine_similarity
 from requests.exceptions import RequestException
 import spacy
 
-# Load spaCy model
-nlp = spacy.load("en_core_web_sm")
+# Load spaCy model with fallback
+def load_spacy_model():
+    try:
+        # Attempt to load the model
+        nlp = spacy.load("en_core_web_sm")
+    except OSError:
+        # If the model is not found, download it
+        print("Downloading spaCy model 'en_core_web_sm'...")
+        from spacy.cli import download
+        download("en_core_web_sm")
+        nlp = spacy.load("en_core_web_sm")
+    return nlp
+
+# Initialize the spaCy model
+nlp = load_spacy_model()
 
 def clean_content(content):
     """
