@@ -78,7 +78,7 @@ def calculate_similarity(texts):
     
     for i in range(len(texts)):
         avg_similarity = sum(similarity_matrix[i]) / (len(texts) - 1)  # Exclude self-similarity
-        if avg_similarity > 0.8:
+        if avg_similarity > 0.9:
             similarity_ratings.append("Similar")
         elif 0.5 <= avg_similarity <= 0.8:
             similarity_ratings.append("Partially Similar")
