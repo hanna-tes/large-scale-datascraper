@@ -91,11 +91,17 @@ def calculate_similarity(texts):
 def extract_entities(text):
     """
     Extracts named entities (e.g., people, organizations, locations) from text using spaCy.
-    Returns a list of entities.
+    Returns a list of up to 10 unique entities.
     """
     doc = nlp(text)
+    # Extract entities as tuples of (entity_text, entity_label_)
     entities = [(ent.text, ent.label_) for ent in doc.ents]
-    return entities
+    
+    # Remove duplicates by converting to a set, then back to a list
+    unique_entities = list(set(entities))
+    
+    # Limit to 10 unique entities
+    return unique_entities[:10]
 
 def scrape_single_url(url):
     try:
