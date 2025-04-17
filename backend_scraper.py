@@ -17,7 +17,13 @@ from webdriver_manager.chrome import ChromeDriverManager
 import pandas as pd
 import time
 import re
+from sklearn.feature_extraction.text import TfidfVectorizer
+from sklearn.metrics.pairwise import cosine_similarity
 from requests.exceptions import RequestException
+import spacy
+
+# Load spaCy model
+nlp = spacy.load("en_core_web_sm")
 
 def clean_content(content):
     """
@@ -41,6 +47,42 @@ def clean_content(content):
     # Strip leading/trailing whitespace
     content = content.strip()
     return content
+
+def calculate_similarity(texts):
+    """
+    Calculates the similarity between a list of texts using TF-IDF and cosine similarity.
+    Returns a list of similarity ratings: "Similar", "Partially Similar", "Not Similar".
+    """
+    if len(texts) < 2:
+        return ["Not Similar"] * len(texts)
+    
+    # Vectorize the texts
+    vectorizer = TfidfVectorizer().fit_transform(texts)
+    vectors = vectorizer.toarray()
+    
+    # Compute pairwise cosine similarity
+    similarity_matrix = cosine_similarity(vectors)
+    similarity_ratings = []
+    
+    for i in range(len(texts)):
+        avg_similarity = sum(similarity_matrix[i]) / (len(texts) - 1)  # Exclude self-similarity
+        if avg_similarity > 0.8:
+            similarity_ratings.append("Similar")
+        elif 0.5 <= avg_similarity <= 0.8:
+            similarity_ratings.append("Partially Similar")
+        else:
+            similarity_ratings.append("Not Similar")
+    
+    return similarity_ratings
+
+def extract_entities(text):
+    """
+    Extracts named entities (e.g., people, organizations, locations) from text using spaCy.
+    Returns a list of entities.
+    """
+    doc = nlp(text)
+    entities = [(ent.text, ent.label_) for ent in doc.ents]
+    return entities
 
 def scrape_single_url(url):
     try:
@@ -84,10 +126,14 @@ def scrape_single_url(url):
         content = "\n".join(all_posts)
         content = clean_content(content)  # Clean the content
         
+        # Extract entities
+        entities = extract_entities(content)
+        
         return {
             "URL": url,
             "Title": title,
             "Content": content,
+            "Entities": entities,  # Add entities to the result
             "Timestamp": pd.Timestamp.now()
         }
     except Exception as e:
@@ -115,5 +161,13 @@ def scrape_urls(urls, progress_bar, status_text):
     
     for thread in threads:
         thread.join()
+    
+    # Perform text similarity analysis
+    texts = [item["Content"] for item in scraped_data]
+    similarity_ratings = calculate_similarity(texts)
+    
+    # Add similarity results to the scraped data
+    for i, rating in enumerate(similarity_ratings):
+        scraped_data[i]["Similarity"] = rating
     
     return scraped_data
