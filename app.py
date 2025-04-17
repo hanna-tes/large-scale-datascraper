@@ -107,7 +107,7 @@ if st.button("Scrape URLs"):
             st.plotly_chart(wordcloud_fig)
             
             # Display entities
-            st.write("Extracted Entities:")
+            st.write("Extracted Entities (Up to 10 Unique Samples):")
             for item in scraped_data:
                 st.write(f"URL: {item['URL']}")
                 st.table(pd.DataFrame(item["Entities"], columns=["Entity", "Type"]))
