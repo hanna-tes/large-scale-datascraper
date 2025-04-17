@@ -24,10 +24,8 @@ import spacy
 # Load spaCy model with fallback
 def load_spacy_model():
     try:
-        # Attempt to load the model
         nlp = spacy.load("en_core_web_sm")
     except OSError:
-        # If the model is not found, download it
         print("Downloading spaCy model 'en_core_web_sm'...")
         from spacy.cli import download
         download("en_core_web_sm")
@@ -68,17 +66,14 @@ def calculate_similarity(texts):
     if len(texts) < 2:
         return ["Not Similar"] * len(texts)
     
-    # Vectorize the texts
     vectorizer = TfidfVectorizer().fit_transform(texts)
     vectors = vectorizer.toarray()
-    
-    # Compute pairwise cosine similarity
     similarity_matrix = cosine_similarity(vectors)
     similarity_ratings = []
     
     for i in range(len(texts)):
-        avg_similarity = sum(similarity_matrix[i]) / (len(texts) - 1)  # Exclude self-similarity
-        if avg_similarity > 0.9:
+        avg_similarity = sum(similarity_matrix[i]) / (len(texts) - 1)
+        if avg_similarity > 0.8:
             similarity_ratings.append("Similar")
         elif 0.5 <= avg_similarity <= 0.8:
             similarity_ratings.append("Partially Similar")
@@ -93,14 +88,40 @@ def extract_entities(text):
     Returns a list of up to 10 unique entities.
     """
     doc = nlp(text)
-    # Extract entities as tuples of (entity_text, entity_label_)
     entities = [(ent.text, ent.label_) for ent in doc.ents]
-    
-    # Remove duplicates by converting to a set, then back to a list
     unique_entities = list(set(entities))
-    
-    # Limit to 10 unique entities
     return unique_entities[:10]
+
+def scrape_topic(url):
+    """
+    Scrapes the original post and replies from a single topic page.
+    """
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+        
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        
+        soup = BeautifulSoup(response.content, "html.parser")
+        
+        # Extract the original post
+        original_post = soup.find("div", class_="postbody")  # Adjust class name as needed
+        original_post_text = original_post.get_text(separator="\n").strip() if original_post else "No Original Post"
+        
+        # Extract replies
+        replies = []
+        for reply in soup.find_all("div", class_="narrow"):  # Adjust class name as needed
+            reply_text = reply.get_text(separator="\n").strip()
+            replies.append(reply_text)
+        
+        # Combine original post and replies
+        content = f"Original Post:\n{original_post_text}\n\nReplies:\n" + "\n".join([f"{i+1}. {reply}" for i, reply in enumerate(replies)])
+        return clean_content(content)
+    except Exception as e:
+        print(f"Error scraping topic {url}: {str(e)}")
+        return None
 
 def scrape_single_url(url):
     try:
@@ -109,56 +130,39 @@ def scrape_single_url(url):
         }
         
         all_posts = []
-        while url:
-            # Retry up to 3 times in case of timeouts or network issues
-            for attempt in range(3):
-                try:
-                    response = requests.get(url, headers=headers, timeout=10)
-                    response.raise_for_status()
-                    break
-                except RequestException as e:
-                    print(f"Attempt {attempt + 1} failed for {url}: {str(e)}")
-                    time.sleep(2)  # Wait before retrying
-            else:
-                print(f"Failed to retrieve {url} after 3 attempts.")
-                return None
+        response = requests.get(url, headers=headers, timeout=10)
+        response.raise_for_status()
+        
+        soup = BeautifulSoup(response.content, "html.parser")
+        
+        # Extract title
+        title = soup.title.string if soup.title else "No Title"
+        
+        # Check if the URL is a user profile page
+        if "profile" in url.lower():
+            # Extract links to all topics shared by the user
+            topic_links = []
+            for topic in soup.find_all("a", href=True):
+                if "/topic/" in topic["href"]:
+                    topic_links.append("https://www.nairaland.com" + topic["href"])
             
-            soup = BeautifulSoup(response.content, "html.parser")
-            
-            # Extract specific content
-            title = soup.title.string if soup.title else "No Title"
-            
-            # Check if the URL is a user profile page
-            if "profile" in url.lower():
-                # Target posts made by the user
-                for post in soup.find_all("div", class_="postbody"):
-                    post_text = post.get_text(separator="\n").strip()
-                    all_posts.append(post_text)
-            else:
-                # For non-profile pages, target specific sections (e.g., forum threads)
-                for post in soup.find_all("div", class_="narrow"):
-                    post_text = post.get_text(separator="\n").strip()
-                    all_posts.append(post_text)
-            
-            # Check for the next page link (pagination)
-            next_page_link = soup.find("a", string="Next")
-            if next_page_link:
-                url = "https://www.nairaland.com" + next_page_link["href"]
-            else:
-                url = None
+            # Scrape each topic page
+            for topic_link in topic_links:
+                topic_content = scrape_topic(topic_link)
+                if topic_content:
+                    all_posts.append(topic_content)
         
         # Combine all posts into a single string
         content = "\n".join(all_posts)
-        content = clean_content(content)  # Clean the content
+        content = clean_content(content)
         
         # Extract entities
         entities = extract_entities(content)
         
         return {
-            "URL": url,
             "Title": title,
             "Content": content,
-            "Entities": entities,  # Add entities to the result
+            "Entities": entities,
             "Timestamp": pd.Timestamp.now()
         }
     except Exception as e:
@@ -174,7 +178,6 @@ def scrape_urls(urls, progress_bar, status_text):
         if result:
             scraped_data.append(result)
         
-        # Update progress bar
         progress_bar.progress((index + 1) / total_urls)
         status_text.text(f"Scraping {index + 1}/{total_urls} URLs...")
     
@@ -187,11 +190,9 @@ def scrape_urls(urls, progress_bar, status_text):
     for thread in threads:
         thread.join()
     
-    # Perform text similarity analysis
     texts = [item["Content"] for item in scraped_data]
     similarity_ratings = calculate_similarity(texts)
     
-    # Add similarity results to the scraped data
     for i, rating in enumerate(similarity_ratings):
         scraped_data[i]["Similarity"] = rating
     
