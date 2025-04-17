@@ -13,6 +13,7 @@ from wordcloud import WordCloud
 import matplotlib.pyplot as plt
 import base64
 import io
+import plotly.express as px
 
 # Set custom theme
 st.set_page_config(
@@ -77,16 +78,60 @@ if st.button("Scrape URLs"):
         # Display results
         if scraped_data:
             df = pd.DataFrame(scraped_data)
-            st.write("Preview of Scraped Data:")
-            st.dataframe(df)
             
-            # Generate word cloud
+            # Filter by similarity
+            similarity_filter = st.selectbox("Filter by Similarity", ["All", "Similar", "Partially Similar", "Not Similar"])
+            if similarity_filter != "All":
+                filtered_df = df[df["Similarity"] == similarity_filter]
+            else:
+                filtered_df = df
+            
+            st.write("Preview of Scraped Data:")
+            st.dataframe(filtered_df)
+            
+            # Generate interactive word cloud
+            def generate_interactive_wordcloud(text):
+                from collections import Counter
+                wordcloud = WordCloud(width=800, height=400, background_color="white").generate(text)
+                word_freq = wordcloud.words_
+                word_freq_df = pd.DataFrame(list(word_freq.items()), columns=["Word", "Frequency"])
+                word_freq_df = word_freq_df.sort_values(by="Frequency", ascending=False)
+                fig = px.bar(word_freq_df, x="Word", y="Frequency", title="Interactive Word Cloud",
+                             labels={"Word": "Words", "Frequency": "Frequency"}, color="Frequency")
+                fig.update_traces(marker_color='blue')
+                fig.update_layout(xaxis_title="Words", yaxis_title="Frequency")
+                return fig
+            
             all_content = " ".join([item["Content"] for item in scraped_data])
-            wordcloud = WordCloud(width=800, height=400, background_color="white").generate(all_content)
-            plt.figure(figsize=(10, 5))
-            plt.imshow(wordcloud, interpolation="bilinear")
-            plt.axis("off")
-            st.pyplot(plt)
+            wordcloud_fig = generate_interactive_wordcloud(all_content)
+            st.plotly_chart(wordcloud_fig)
+            
+            # Display entities
+            st.write("Extracted Entities:")
+            for item in scraped_data:
+                st.write(f"URL: {item['URL']}")
+                st.table(pd.DataFrame(item["Entities"], columns=["Entity", "Type"]))
+            
+            # Generate summary report
+            st.write("Summary Report:")
+            
+            # Most common topics (based on titles)
+            titles = [item["Title"] for item in scraped_data]
+            title_counts = pd.Series(titles).value_counts()
+            st.write("Most Common Topics:")
+            st.table(title_counts.head(5))
+            
+            # Top contributors (based on URLs)
+            urls = [item["URL"] for item in scraped_data]
+            url_counts = pd.Series(urls).value_counts()
+            st.write("Top Contributors:")
+            st.table(url_counts.head(5))
+            
+            # Most frequent entities
+            all_entities = [entity for item in scraped_data for entity in item["Entities"]]
+            entity_counts = pd.Series(all_entities).value_counts()
+            st.write("Most Frequent Entities:")
+            st.table(entity_counts.head(5))
             
             # Download button for CSV
             csv_buffer = io.StringIO()
