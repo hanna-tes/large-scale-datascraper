@@ -112,14 +112,6 @@ if st.button("Scrape URLs"):
                 st.write(f"URL: {item['URL']}")
                 st.table(pd.DataFrame(item["Entities"], columns=["Entity", "Type"]))
             
-            # Generate summary report
-            st.write("Summary Report:")
-            
-            # Most common topics (based on titles)
-            titles = [item["Title"] for item in scraped_data]
-            title_counts = pd.Series(titles).value_counts()
-            st.write("Most Common Topics:")
-            st.table(title_counts.head(5))
             
             # Download button for CSV
             csv_buffer = io.StringIO()
