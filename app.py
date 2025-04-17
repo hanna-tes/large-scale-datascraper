@@ -26,28 +26,19 @@ st.set_page_config(
 background_image_url = "https://images.pexels.com/photos/1103970/pexels-photo-1103970.jpeg?auto=compress&cs=tinysrgb&w=1920&h=1080&dpr=1"
 
 st.markdown(
-    f"""
+    """
     <style>
-    body {{
-        background-image: url('{background_image_url}');
-        background-size: cover;
-        background-repeat: no-repeat;
-        background-attachment: fixed;
-    }}
-    /* Add a semi-transparent overlay */
-    .stApp {{
-        background-color: rgba(0, 0, 0, 0.6); /* Black with 60% opacity */
-        border-radius: 10px;
-        padding: 20px;
-    }}
-    /* Change text color to ensure visibility */
-    .stApp {{
-        color: black; /* Change text color to black */
-    }}
-    /* Optional: Style specific elements like headers */
-    h1, h2, h3, h4, h5, h6 {{
-        color: #333333; /* Dark gray for headers */
-    }}
+    body {
+        background-color: #f9f9f9; /* Light background */
+        background-image: none !important; /* Explicitly remove background image */
+    }
+    .stApp {
+        font-family: Arial, sans-serif;
+        color: #333333; /* Dark text color */
+    }
+    table {
+        color: inherit; /* Ensure tables inherit the text color */
+    }
     </style>
     """,
     unsafe_allow_html=True,
