@@ -40,9 +40,13 @@ st.markdown(
         border-radius: 10px;
         padding: 20px;
     }}
-    /* Ensure text color contrasts with the overlay */
+    /* Change text color to ensure visibility */
     .stApp {{
-        color: white; /* White text for contrast */
+        color: black; /* Change text color to black */
+    }}
+    /* Optional: Style specific elements like headers */
+    h1, h2, h3, h4, h5, h6 {{
+        color: #333333; /* Dark gray for headers */
     }}
     </style>
     """,
