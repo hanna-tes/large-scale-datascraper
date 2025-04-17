@@ -155,7 +155,6 @@ def scrape_single_url(url):
         entities = extract_entities(content)
         
         return {
-            "URL": url,
             "Title": title,
             "Content": content,
             "Entities": entities,  # Add entities to the result
