@@ -96,7 +96,7 @@ if st.button("Scrape URLs"):
                 word_freq = wordcloud.words_
                 word_freq_df = pd.DataFrame(list(word_freq.items()), columns=["Word", "Frequency"])
                 word_freq_df = word_freq_df.sort_values(by="Frequency", ascending=False)
-                fig = px.bar(word_freq_df, x="Word", y="Frequency", title="Word Cloud",
+                fig = px.bar(word_freq_df, x="Word", y="Frequency", title="Interactive Word Cloud",
                              labels={"Word": "Words", "Frequency": "Frequency"}, color="Frequency")
                 fig.update_traces(marker_color='blue')
                 fig.update_layout(xaxis_title="Words", yaxis_title="Frequency")
