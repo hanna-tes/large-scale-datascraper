@@ -371,9 +371,9 @@ def scrape_user_posts_with_topics(username, pages_per_profile=100):
     # Step 2: Scrape content for each topic
     all_posts = []
     for topic in tqdm(topics, desc=f"Scraping topics for {username}"):
-    topic_url = topic["topic_url"]
-    posts = scrape_topic_content(topic_url, username)
-    all_posts.extend(posts)
+        topic_url = topic["topic_url"]
+        posts = scrape_topic_content(topic_url, username)
+        all_posts.extend(posts)
     return all_posts
 
 def scrape_multiple_users(usernames, pages_per_profile=100, max_workers=5, delay=1):
