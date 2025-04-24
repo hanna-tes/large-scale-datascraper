@@ -273,79 +273,90 @@ def scrape_topic_content(topic_url, username):
     """Scrape all content (main post and replies) from a topic page."""
     posts_data = []
     try:
-        response = requests.get(topic_url, headers=get_headers(), timeout=10)
-        if response.status_code != 200:
-            print(f"Error fetching topic page: Status code {response.status_code}")
-            return posts_data
-        soup = BeautifulSoup(response.content, "html.parser")
-        # Find all post rows
-        rows = soup.find_all("tr")
-        i = 0
-        while i < len(rows) - 1:
-            try:
-                # Check if this is a header row
-                header_row = rows[i]
-                header_cell = header_row.find("td", class_="bold")
-                if not header_cell:
+        while True:  # Loop to handle pagination
+            print(f"Scraping topic page: {topic_url}")
+            response = requests.get(topic_url, headers=get_headers(), timeout=10)
+            if response.status_code != 200:
+                print(f"Error fetching topic page: Status code {response.status_code}")
+                break
+            soup = BeautifulSoup(response.content, "html.parser")
+            # Find all post rows
+            rows = soup.find_all("tr")
+            i = 0
+            while i < len(rows) - 1:
+                try:
+                    # Check if this is a header row
+                    header_row = rows[i]
+                    header_cell = header_row.find("td", class_="bold")
+                    if not header_cell:
+                        i += 1
+                        continue
+                    # Extract post metadata
+                    time_span = header_cell.find("span", class_="s")
+                    if not time_span:
+                        i += 1
+                        continue
+                    datetime_text = time_span.get_text(strip=True)
+                    if " On " in datetime_text:
+                        time_str, date_str = datetime_text.split(' On ', 1)
+                    else:
+                        time_str, date_str = datetime_text, "Today"
+                    # Extract username
+                    username_tag = header_cell.find("a", class_="user")
+                    post_username = username_tag.get_text(strip=True) if username_tag else "Unknown"
+                    # Extract likes and shares
+                    stats_p = header_cell.find("p", class_="s")
+                    likes, shares = 0, 0
+                    if stats_p:
+                        stats_text = stats_p.get_text(strip=True)
+                        likes_match = re.search(r'(\d+) Like', stats_text)
+                        shares_match = re.search(r'(\d+) Share', stats_text)
+                        if likes_match:
+                            likes = int(likes_match.group(1))
+                        if shares_match:
+                            shares = int(shares_match.group(1))
+                    # Extract post text
+                    content_row = rows[i + 1] if i + 1 < len(rows) else None
+                    if not content_row:
+                        i += 1
+                        continue
+                    content_cell = content_row.find("td", id=lambda x: x and x.startswith("pb"))
+                    if not content_cell:
+                        content_cell = content_row.find("td", class_=lambda x: x and "pd" in x.split())
+                    if not content_cell:
+                        i += 1
+                        continue
+                    content_div = content_cell.find("div", class_="narrow")
+                    post_text = clean_text(content_div.get_text(separator=" ", strip=True)) if content_div else ""
+                    # Parse date/time properly
+                    post_date, post_time, timestamp = parse_date_time(date_str, time_str)
+                    # Add to posts data
+                    posts_data.append({
+                        "post_id": f"{topic_url}_{i}",
+                        "username": post_username,
+                        "post_text": post_text,
+                        "post_date": post_date,
+                        "post_time": post_time,
+                        "timestamp": timestamp,
+                        "likes": likes,
+                        "shares": shares,
+                        "topic_url": topic_url
+                    })
+                    # Move to next post (skip content row)
+                    i += 2
+                except Exception as e:
+                    print(f"Error processing post: {str(e)}")
                     i += 1
                     continue
-                # Extract post metadata
-                time_span = header_cell.find("span", class_="s")
-                if not time_span:
-                    i += 1
-                    continue
-                datetime_text = time_span.get_text(strip=True)
-                if " On " in datetime_text:
-                    time_str, date_str = datetime_text.split(' On ', 1)
-                else:
-                    time_str, date_str = datetime_text, "Today"
-                # Parse date and time
-                post_date, post_time, timestamp = parse_date_time(date_str, time_str)
-                # Extract username
-                username_tag = header_cell.find("a", class_="user")
-                post_username = username_tag.get_text(strip=True) if username_tag else "Unknown"
-                # Extract likes and shares
-                stats_p = header_cell.find("p", class_="s")
-                likes, shares = 0, 0
-                if stats_p:
-                    stats_text = stats_p.get_text(strip=True)
-                    likes_match = re.search(r'(\d+) Like', stats_text)
-                    shares_match = re.search(r'(\d+) Share', stats_text)
-                    if likes_match:
-                        likes = int(likes_match.group(1))
-                    if shares_match:
-                        shares = int(shares_match.group(1))
-                # Extract post text
-                content_row = rows[i + 1] if i + 1 < len(rows) else None
-                if not content_row:
-                    i += 1
-                    continue
-                content_cell = content_row.find("td", id=lambda x: x and x.startswith("pb"))
-                if not content_cell:
-                    content_cell = content_row.find("td", class_=lambda x: x and "pd" in x.split())
-                if not content_cell:
-                    i += 1
-                    continue
-                content_div = content_cell.find("div", class_="narrow")
-                post_text = clean_text(content_div.get_text(separator=" ", strip=True)) if content_div else ""
-                # Add to posts data
-                posts_data.append({
-                    "post_id": f"{topic_url}_{i}",
-                    "username": post_username,
-                    "post_text": post_text,
-                    "post_date": post_date,
-                    "post_time": post_time,
-                    "timestamp": timestamp,
-                    "likes": likes,
-                    "shares": shares,
-                    "topic_url": topic_url
-                })
-                # Move to next post (skip content row)
-                i += 2
-            except Exception as e:
-                print(f"Error processing post: {str(e)}")
-                i += 1
-                continue
+            # Find next page link
+            next_page = None
+            for a_tag in soup.find_all("a"):
+                if a_tag.get_text(strip=True) == "Next":
+                    next_page = a_tag
+                    break
+            if not next_page:
+                break
+            topic_url = "https://www.nairaland.com" + next_page['href']
     except Exception as e:
         print(f"Error scraping topic content: {str(e)}")
     return posts_data
@@ -360,9 +371,9 @@ def scrape_user_posts_with_topics(username, pages_per_profile=100):
     # Step 2: Scrape content for each topic
     all_posts = []
     for topic in tqdm(topics, desc=f"Scraping topics for {username}"):
-        topic_url = topic["topic_url"]
-        posts = scrape_topic_content(topic_url, username)
-        all_posts.extend(posts)
+    topic_url = topic["topic_url"]
+    posts = scrape_topic_content(topic_url, username)
+    all_posts.extend(posts)
     return all_posts
 
 def scrape_multiple_users(usernames, pages_per_profile=100, max_workers=5, delay=1):
