@@ -104,6 +104,30 @@ def get_headers():
         'Upgrade-Insecure-Requests': '1',
     }
 
+def retry_on_429(func):
+    def wrapper(*args, **kwargs):
+        max_retries = 5
+        retry_delay = 1
+        for attempt in range(max_retries):
+            try:
+                response = func(*args, **kwargs)
+                if response.status_code == 429:
+                    print(f"Rate limit exceeded. Retrying in {retry_delay} seconds...")
+                    time.sleep(retry_delay)
+                    retry_delay *= 2  # Exponential backoff
+                    continue
+                return response
+            except Exception as e:
+                print(f"Error fetching page: {str(e)}")
+                time.sleep(retry_delay)
+                retry_delay *= 2
+        raise Exception("Max retries reached. Unable to fetch page.")
+    return wrapper
+
+@retry_on_429
+def requests_get(url, headers, timeout):
+    return requests.get(url, headers=headers, timeout=timeout)
+
 def clean_text(text):
     if not text:
         return ""
@@ -245,7 +269,6 @@ def scrape_user_topics(username, pages=100):
         print(f"Error scraping topics for {username}: {str(e)}")
     return topics_data
 
-
 def scrape_topic_content(topic_url, username):
     """Scrape all content (main post and replies) from a topic page."""
     posts_data = []
@@ -327,11 +350,10 @@ def scrape_topic_content(topic_url, username):
         print(f"Error scraping topic content: {str(e)}")
     return posts_data
 
-
 def scrape_user_posts_with_topics(username, pages_per_profile=100):
     """Scrape all topics and their content for a user."""
     # Step 1: Scrape topics from the user's profile
-    topics = scrape_user_topics(username)
+    topics = scrape_user_topics(username, pages=pages_per_profile)
     if not topics:
         print(f"No topics found for {username}")
         return []
@@ -342,7 +364,6 @@ def scrape_user_posts_with_topics(username, pages_per_profile=100):
         posts = scrape_topic_content(topic_url, username)
         all_posts.extend(posts)
     return all_posts
-
 
 def scrape_multiple_users(usernames, pages_per_profile=100, max_workers=5, delay=1):
     results = []
@@ -847,17 +868,16 @@ def generate_insights(df, freq_stats, content_sim_df, section_overlap_df, topic_
             insights.append(insight_text)
     return insights
 # Main dashboard interface
+# Main scraping function
 def main():
     # Initialize database
     conn = init_db()
-    
     # Sidebar for navigation
     st.sidebar.title("Navigation")
     page = st.sidebar.radio(
         "Select Page",
         ["Scrape Profiles", "View Data", "Analysis", "Visualizations", "Coordination Detection", "Export Results"]
     )
-    
     # List of usernames to analyze (for demo purposes)
     default_usernames = [
         "elusive001", "botragelad", "holiness2100", "uprightness100", "truthU87",
@@ -866,17 +886,14 @@ def main():
         "WriteerNig", "WriterrNig", "WritterNig", "WriiterNig", "WrriterNig", "WriterNigg",
         "WriterNiiig", "WriterNiig", "Ken6488", "Dalil8", "Slavaukraini", "Redscorpion", "Nigeriazoo"
     ]
-    
     # Scrape Profiles page
     if page == "Scrape Profiles":
         st.header("Scrape Nairaland User Profiles")
-        
         # Input method selection
         input_method = st.radio(
             "Select Input Method",
             ["Enter Usernames", "Upload File", "Use Default List"]
         )
-        
         usernames = []
         if input_method == "Enter Usernames":
             username_input = st.text_area("Enter usernames (one per line)")
@@ -890,16 +907,14 @@ def main():
         elif input_method == "Use Default List":
             usernames = default_usernames
             st.write(f"Using {len(usernames)} default usernames")
-        
         # Scraping parameters
         col1, col2, col3 = st.columns(3)
         with col1:
-            pages_per_user = st.number_input("Pages per user", min_value=1, max_value=50, value=10)
+            pages_per_user = st.number_input("Pages per user", min_value=1, max_value=100, value=50)
         with col2:
             max_workers = st.number_input("Concurrent workers", min_value=1, max_value=10, value=5)
         with col3:
             delay = st.number_input("Delay between requests (seconds)", min_value=0.5, max_value=5.0, value=1.0, step=0.5)
-        
         # Start scraping
         if st.button("Start Scraping") and usernames:
             # Perform scraping
@@ -916,8 +931,7 @@ def main():
             post_counts.sort(key=lambda x: x[1], reverse=True)
             post_count_df = pd.DataFrame(post_counts, columns=["Username", "Post Count"])
             st.write("Posts per user:")
-            st.dataframe(post_count_df)
-    
+            st.dataframe(post_count_df)    
     # View Data page
     elif page == "View Data":
         st.header("View Scraped Data")
