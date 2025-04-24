@@ -388,25 +388,30 @@ def scrape_user_profile(username):
             continue
     return None
 
-def scrape_user_topics(username, pages=100):
-    """Scrape all topics posted by a user from their profile page."""
-    profile_url = f"https://www.nairaland.com/{username}"
+def scrape_user_topics(username, pages=5):
+    """Scrape all topics posted by a user using Selenium."""
     topics_data = []
     try:
-        response = requests.get(profile_url, headers=get_headers(), timeout=10)
-        if response.status_code != 200:
-            print(f"Error fetching profile page: Status code {response.status_code}")
-            return topics_data
-        soup = BeautifulSoup(response.content, "html.parser")
-        # Find all topic rows
+        # Setup Selenium
+        service = Service('/path/to/chromedriver')  # UPDATE THIS
+        options = webdriver.ChromeOptions()
+        options.add_argument('--headless')
+        driver = webdriver.Chrome(service=service, options=options)
+
+        url = f"https://www.nairaland.com/{username}"
+        driver.get(url)
+        WebDriverWait(driver, 10).until(
+            EC.presence_of_element_located((By.CLASS_NAME, "bold"))
+        )
+        soup = BeautifulSoup(driver.page_source, "html.parser")
+
+        # Parse topic links
         topic_rows = soup.find_all("tr")
         for row in topic_rows:
             try:
-                # Extract topic details
                 cells = row.find_all("td")
-                if not cells or len(cells) < 2:
+                if len(cells) < 2:
                     continue
-                # Extract topic title and URL
                 title_cell = cells[1]
                 title_link = title_cell.find("a")
                 if not title_link:
@@ -415,13 +420,14 @@ def scrape_user_topics(username, pages=100):
                 topic_url = title_link.get("href", "")
                 if not topic_url.startswith("http"):
                     topic_url = f"https://www.nairaland.com{topic_url}"
-                # Extract post count and last activity
+
                 metadata = cells[-1].get_text(strip=True)
-                post_count = re.search(r'(\d+) posts', metadata)
-                post_count = int(post_count.group(1)) if post_count else 0
-                last_activity = re.search(r'On (.+)$', metadata)
-                last_activity = last_activity.group(1) if last_activity else "Unknown"
-                # Add to topics data
+                post_count_match = re.search(r'(\d+) posts?', metadata)
+                post_count = int(post_count_match.group(1)) if post_count_match else 0
+
+                last_activity_match = re.search(r'On (.+)$', metadata)
+                last_activity = last_activity_match.group(1) if last_activity_match else "Unknown"
+
                 topics_data.append({
                     "topic_title": topic_title,
                     "topic_url": topic_url,
@@ -429,10 +435,13 @@ def scrape_user_topics(username, pages=100):
                     "last_activity": last_activity
                 })
             except Exception as e:
-                print(f"Error processing topic row: {str(e)}")
+                print(f"Error parsing topic row: {str(e)}")
                 continue
+
+        driver.quit()
     except Exception as e:
         print(f"Error scraping topics for {username}: {str(e)}")
+
     return topics_data
 
 def scrape_topic_content(topic_url, username):
