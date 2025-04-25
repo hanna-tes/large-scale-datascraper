@@ -145,7 +145,7 @@ def requests_get(url, headers, timeout):
     return requests.get(url, headers=headers, timeout=timeout)
     
 from playwright.sync_api import sync_playwright
-def scrape_user_posts(username, pages=10, delay=1):
+def scrape_user_posts(username):
     posts_data = []
     registration_date = scrape_user_profile(username)
     
@@ -157,70 +157,31 @@ def scrape_user_posts(username, pages=10, delay=1):
             page = context.new_page()
             page.goto(url)
 
-            for page_num in range(pages):
+            while True:
                 # Wait for the page to finish loading
                 page.wait_for_load_state("networkidle0")
 
                 # Parse the page content
                 soup = BeautifulSoup(page.content(), "html.parser")
 
-                # Extract posts using the same logic as before
-                rows = soup.find_all("tr")
-                i = 0
-                while i < len(rows) - 1:
+                # Find all post rows
+                rows = soup.find_all("tr", class_="messageRow")
+
+                for row in rows:
                     try:
-                        # Check if this is a header row
-                        header_row = rows[i]
-                        header_cell = header_row.find("td", class_="bold")
-
-                        if not header_cell:
-                            i += 1
-                            continue
-
                         # Extract post metadata
-                        time_span = header_cell.find("span", class_="s")
-                        if not time_span:
-                            i += 1
-                            continue
-
-                        datetime_text = time_span.get_text(strip=True)
-                        # Parse date and time
-                        if " On " in datetime_text:
-                            time_str, date_str = datetime_text.split(' On ', 1)
-                        else:
-                            time_str, date_str = datetime_text, "Today"
-
-                        # Extract section, topic, and other metadata (same as before)
-                        # Example placeholders for missing logic
-                        section = "Section Placeholder"
-                        topic = "Topic Placeholder"
-                        topic_url = "URL Placeholder"
-                        post_text = "Post Text Placeholder"
-                        post_date = date_str
-                        post_time = time_str
-                        timestamp = "Timestamp Placeholder"
-                        likes = 0
-                        shares = 0
+                        post_text = row.find("div", class_="messageContent").get_text(strip=True)
+                        post_date = row.find("span", class_="messageFooter").find("span").get_text(strip=True)
+                        post_time = row.find("span", class_="messageFooter").find("span", class_="smallText").get_text(strip=True)
 
                         # Add to posts data
                         posts_data.append({
-                            'post_id': f"{username}_{len(posts_data)}",
-                            'username': username,
                             'post_text': post_text,
                             'post_date': post_date,
-                            'post_time': post_time,
-                            'timestamp': timestamp,
-                            'section': section,
-                            'topic': topic,
-                            'topic_url': topic_url,
-                            'likes': likes,
-                            'shares': shares
+                            'post_time': post_time
                         })
-                        i += 2
                     except Exception as e:
                         print(f"Error processing post: {str(e)}")
-                        i += 1
-                        continue
 
                 # Find next page link
                 next_page = page.query_selector("a.next")
@@ -230,9 +191,7 @@ def scrape_user_posts(username, pages=10, delay=1):
 
                 page.click("a.next")
                 page.wait_for_load_state("networkidle0")
-                url = "https://www.nairaland.com" + next_page['href']
-                print(f"Next page URL: {url}")
-                time.sleep(delay)
+                time.sleep(1)
 
             browser.close()
     except Exception as e:
@@ -245,7 +204,6 @@ def scrape_user_posts(username, pages=10, delay=1):
         'registration_date': registration_date,
         'post_count': len(posts_data)
     }
-
 def clean_text(text):
     if not text:
         return ""
@@ -1008,23 +966,26 @@ def main():
             st.write(f"Using {len(usernames)} default usernames")
         # Start scraping
         if st.button("Start Scraping") and usernames:
-            # Perform scraping using Playwright
-            results = []
-            for username in usernames:
-                results.append(scrape_user_posts([username]))
+            # Perform scraping
+            results = scrape_multiple_users(usernames, pages_per_user, max_workers, delay)
+            
             # Save to database
             save_to_database(results, conn)
+            
             # Display summary
             st.success(f"Scraping completed for {len(results)} users")
+            
             # Show summary statistics
             total_posts = sum(user['post_count'] for user in results)
             st.write(f"Total posts scraped: {total_posts}")
+            
             # Display post counts per user
             post_counts = [(user['username'], user['post_count']) for user in results]
             post_counts.sort(key=lambda x: x[1], reverse=True)
+            
             post_count_df = pd.DataFrame(post_counts, columns=["Username", "Post Count"])
             st.write("Posts per user:")
-            st.dataframe(post_count_df)  
+            st.dataframe(post_count_df) 
     # View Data page
     elif page == "View Data":
         st.header("View Scraped Data")
