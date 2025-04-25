@@ -59,9 +59,15 @@ def download_nltk_resources():
 
 download_nltk_resources()
 
+def main():
+    import subprocess
+    try:
+        subprocess.run(["playwright", "install"])
+    except FileNotFoundError:
+        print("Playwright is not installed. Please install it with 'pip install playwright'")
+
 # Initialize database
 import sqlite3
-
 def init_db():
     conn = sqlite3.connect('nairaland_data.db')
     c = conn.cursor()
