@@ -32,6 +32,11 @@ import os
 from tqdm import tqdm
 import io
 import json
+try:
+    subprocess.run(["playwright", "install"])
+except FileNotFoundError:
+    print("Playwright is not installed. Please install it with 'pip install playwright'")
+
 
 # Set page config
 st.set_page_config(
@@ -58,13 +63,6 @@ def download_nltk_resources():
     nltk.download('stopwords')
 
 download_nltk_resources()
-
-def main():
-    import subprocess
-    try:
-        subprocess.run(["playwright", "install"])
-    except FileNotFoundError:
-        print("Playwright is not installed. Please install it with 'pip install playwright'")
 
 # Initialize database
 import sqlite3
