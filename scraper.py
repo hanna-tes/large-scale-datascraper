@@ -30,6 +30,8 @@ from plotly.subplots import make_subplots
 import warnings
 import os
 from tqdm import tqdm
+import io
+import json
 
 # Set page config
 st.set_page_config(
@@ -58,8 +60,16 @@ def download_nltk_resources():
 download_nltk_resources()
 
 # Initialize database
+import psycopg2
+
 def init_db():
-    conn = sqlite3.connect('nairaland_data.db')
+    conn = psycopg2.connect(
+        database="nairaland_data",
+        user="nairaland_user",
+        password="password",
+        host="localhost",
+        port="5432"
+    )
     c = conn.cursor()
     # Create users table
     c.execute('''
@@ -351,176 +361,126 @@ def scrape_user_profile(username):
         print(f"Error fetching profile: {str(e)}")
     return None
 
-def scrape_user_topics(username, pages=5):
-    """Scrape all topics posted by a user using Playwright."""
+def scrape_user_topics(username):
     topics_data = []
     try:
+        url = f"https://www.nairaland.com/{username}"
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            context = browser.new_context()
+            browser = p.chromium.launch(headless=True, args=['--no-sandbox', '--disable-setuid-sandbox'])
+            context = browser.new_context(user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36')
             page = context.new_page()
-            url = f"https://www.nairaland.com/{username}"
             page.goto(url, timeout=15000)
-            # Wait for the page to load dynamically
-            page.wait_for_selector(".bold", timeout=10000)
-            soup = BeautifulSoup(page.content(), "html.parser")
-
-            # Parse topic links
-            topic_rows = soup.find_all("tr")
-            for row in topic_rows:
+            
+            # Wait for the page to finish loading
+            page.wait_for_load_state("networkidle0")
+            
+            # Wait for the selector to appear
+            page.wait_for_selector(".threadTitle", timeout=10000)
+            
+            # Get the page content
+            html = page.content()
+            soup = BeautifulSoup(html, 'html.parser')
+            
+            # Find all topic rows
+            topic_rows = soup.find_all("tr", class_="threadRow")
+            
+            for topic_row in topic_rows:
                 try:
-                    cells = row.find_all("td")
-                    if len(cells) < 2:
-                        continue
-                    title_cell = cells[1]
-                    title_link = title_cell.find("a")
-                    if not title_link:
-                        continue
-                    topic_title = title_link.get_text(strip=True)
-                    topic_url = title_link.get("href", "")
-                    if not topic_url.startswith("http"):
-                        topic_url = f"https://www.nairaland.com{topic_url}"
-
-                    metadata = cells[-1].get_text(strip=True)
-                    post_count_match = re.search(r'(\d+) posts?', metadata)
-                    post_count = int(post_count_match.group(1)) if post_count_match else 0
-
-                    last_activity_match = re.search(r'On (.+)$', metadata)
-                    last_activity = last_activity_match.group(1) if last_activity_match else "Unknown"
-
+                    # Extract topic metadata
+                    topic_title = topic_row.find("a", class_="threadTitle").get_text(strip=True)
+                    topic_url = topic_row.find("a", class_="threadTitle").get("href")
+                    
+                    # Scrape topic contents
+                    topic_contents = scrape_topic_contents(topic_url)
+                    
+                    # Add to topics data
                     topics_data.append({
-                        "topic_title": topic_title,
-                        "topic_url": topic_url,
-                        "post_count": post_count,
-                        "last_activity": last_activity
+                        'topic_title': topic_title,
+                        'topic_url': topic_url,
+                        'topic_contents': topic_contents
                     })
                 except Exception as e:
-                    print(f"Error parsing topic row: {str(e)}")
-                    continue
+                    print(f"Error processing topic: {str(e)}")
+            
             browser.close()
     except Exception as e:
         print(f"Error scraping topics for {username}: {str(e)}")
     return topics_data
 
-def scrape_topic_content(topic_url, username):
-    """Scrape all content (main post and replies) from a topic page using Playwright."""
-    posts_data = []
+def scrape_topic_contents(topic_url):
+    topic_contents = []
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            context = browser.new_context()
+            browser = p.chromium.launch(headless=True, args=['--no-sandbox', '--disable-setuid-sandbox'])
+            context = browser.new_context(user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36')
             page = context.new_page()
-            while True:  # Loop to handle pagination
-                print(f"Scraping topic page: {topic_url}")
-                page.goto(topic_url, timeout=15000)
-                # Wait for the page to load dynamically
-                page.wait_for_selector(".bold", timeout=10000)
-                soup = BeautifulSoup(page.content(), "html.parser")
+            page.goto(topic_url, timeout=15000)
+            
+            # Wait for the page to finish loading
+            page.wait_for_load_state("networkidle0")
+            
+            # Wait for the selector to appear
+            page.wait_for_selector(".messageHeader", timeout=10000)
+            
+            # Get the page content
+            html = page.content()
+            soup = BeautifulSoup(html, 'html.parser')
+            
+            # Find all post rows
+            post_rows = soup.find_all("tr", class_="messageRow")
+            
+            for post_row in post_rows:
+                try:
+                    # Extract post metadata
+                    post_text = post_row.find("div", class_="messageContent").get_text(strip=True)
+                    post_date = post_row.find("span", class_="messageFooter").find("span").get_text(strip=True)
+                    post_time = post_row.find("span", class_="messageFooter").find("span", class_="smallText").get_text(strip=True)
+                    
+                    # Add to topic contents
+                    topic_contents.append({
+                        'post_text': post_text,
+                        'post_date': post_date,
+                        'post_time': post_time
+                    })
+                except Exception as e:
+                    print(f"Error processing post: {str(e)}")
+            
+            # Scrape next pages
+            next_page = page.query_selector("a.next")
+            while next_page:
+                page.click("a.next")
+                page.wait_for_load_state("networkidle0")
+                page.wait_for_selector(".messageHeader", timeout=10000)
+                
+                # Get the page content
+                html = page.content()
+                soup = BeautifulSoup(html, 'html.parser')
                 
                 # Find all post rows
-                rows = soup.find_all("tr")
-                i = 0
-                while i < len(rows) - 1:
+                post_rows = soup.find_all("tr", class_="messageRow")
+                
+                for post_row in post_rows:
                     try:
-                        # Check if this is a header row
-                        header_row = rows[i]
-                        header_cell = header_row.find("td", class_="bold")
-                        if not header_cell:
-                            i += 1
-                            continue
                         # Extract post metadata
-                        time_span = header_cell.find("span", class_="s")
-                        if not time_span:
-                            i += 1
-                            continue
-                        datetime_text = time_span.get_text(strip=True)
-                        if " On " in datetime_text:
-                            time_str, date_str = datetime_text.split(' On ', 1)
-                        else:
-                            time_str, date_str = datetime_text, "Today"
-                        # Extract username
-                        username_tag = header_cell.find("a", class_="user")
-                        post_username = username_tag.get_text(strip=True) if username_tag else "Unknown"
-                        # Extract likes and shares
-                        stats_p = header_cell.find("p", class_="s")
-                        likes, shares = 0, 0
-                        if stats_p:
-                            stats_text = stats_p.get_text(strip=True)
-                            likes_match = re.search(r'(\d+) Like', stats_text)
-                            shares_match = re.search(r'(\d+) Share', stats_text)
-                            if likes_match:
-                                likes = int(likes_match.group(1))
-                            if shares_match:
-                                shares = int(shares_match.group(1))
-                        # Extract post text
-                        content_row = rows[i + 1] if i + 1 < len(rows) else None
-                        if not content_row:
-                            i += 1
-                            continue
-                        content_cell = content_row.find("td", id=lambda x: x and x.startswith("pb"))
-                        if not content_cell:
-                            content_cell = content_row.find("td", class_=lambda x: x and "pd" in x.split())
-                        if not content_cell:
-                            i += 1
-                            continue
-                        content_div = content_cell.find("div", class_="narrow")
-                        post_text = clean_text(content_div.get_text(separator=" ", strip=True)) if content_div else ""
-                        # Parse date/time properly
-                        post_date, post_time, timestamp = parse_date_time(date_str, time_str)
-                        # Add to posts data
-                        posts_data.append({
-                            "post_id": f"{topic_url}_{i}",
-                            "username": post_username,
-                            "post_text": post_text,
-                            "post_date": post_date,
-                            "post_time": post_time,
-                            "timestamp": timestamp,
-                            "likes": likes,
-                            "shares": shares,
-                            "topic_url": topic_url
+                        post_text = post_row.find("div", class_="messageContent").get_text(strip=True)
+                        post_date = post_row.find("span", class_="messageFooter").find("span").get_text(strip=True)
+                        post_time = post_row.find("span", class_="messageFooter").find("span", class_="smallText").get_text(strip=True)
+                        
+                        # Add to topic contents
+                        topic_contents.append({
+                            'post_text': post_text,
+                            'post_date': post_date,
+                            'post_time': post_time
                         })
-                        # Move to next post (skip content row)
-                        i += 2
                     except Exception as e:
                         print(f"Error processing post: {str(e)}")
-                        i += 1
-                        continue
-                # Find next page link
-                next_page = None
-                for a_tag in soup.find_all("a"):
-                    if a_tag.get_text(strip=True) == "Next":
-                        next_page = a_tag
-                        break
-                if not next_page:
-                    break
-                topic_url = "https://www.nairaland.com" + next_page['href']
+                
+                next_page = page.query_selector("a.next")
+            
             browser.close()
     except Exception as e:
-        print(f"Error scraping topic content: {str(e)}")
-    return posts_data
-
-from tqdm import tqdm
-
-def scrape_user_posts_with_topics(username, pages_per_profile=100):
-    """Scrape all topics and their content for a user."""
-    # Step 1: Scrape topics from the user's profile
-    topics = scrape_user_topics(username, pages=pages_per_profile)
-    if not topics:
-        print(f"No topics found for {username}")
-        return []
-    
-    # Step 2: Scrape content for each topic
-    all_posts = []
-    for topic in tqdm(topics, desc=f"Scraping topics for {username}"):
-        try:
-            topic_url = topic["topic_url"]
-            posts = scrape_topic_content(topic_url, username)
-            all_posts.extend(posts)
-        except Exception as e:
-            print(f"Error scraping topic {topic['topic_title']} ({topic_url}): {str(e)}")
-            continue
-    
-    return all_posts
+        print(f"Error scraping topic contents: {str(e)}")
+    return topic_contents
 
 def scrape_multiple_users(usernames, pages_per_user=10, max_workers=5, delay=1):
     results = []
@@ -553,14 +513,14 @@ def save_to_database(data, conn):
         # Insert or update user
         cursor.execute('''
         INSERT OR REPLACE INTO users (username, profile_url, registration_date, last_scrape_date)
-        VALUES (?, ?, ?, ?)
+        VALUES (%s, %s, %s, %s)
         ''', (username, profile_url, registration_date, now))
         # Insert posts
         for post in user_data['posts']:
             cursor.execute('''
             INSERT OR REPLACE INTO posts 
             (post_id, username, post_text, post_date, post_time, timestamp, section, topic, topic_url, likes, shares)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
             ''', (
                 post['post_id'],
                 post['username'],
