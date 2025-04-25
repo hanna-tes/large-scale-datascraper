@@ -145,123 +145,14 @@ def retry_on_429(func):
 def requests_get(url, headers, timeout):
     return requests.get(url, headers=headers, timeout=timeout)
 
-from playwright.sync_api import sync_playwright
+from nairaland_scraper.spiders.nairaland_spider import NairalandSpider
+from scrapy.crawler import CrawlerProcess
+from scrapy.utils.project import get_project_settings
 
-def scrape_user_posts_with_playwright(username, pages=10, delay=1):
-    posts_data = []
-    try:
-        url = f"https://www.nairaland.com/{username}/posts"
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            context = browser.new_context()
-            page = context.new_page()
-
-            for page_num in range(pages):
-                for attempt in range(3):  # Retry up to 3 times
-                    try:
-                        print(f"Scraping page {page_num + 1} for {username}, URL: {url}")
-                        page.goto(url, timeout=15000)
-
-                        # Wait for the page to finish loading
-                        page.wait_for_load_state("networkidle0")
-
-                        # Wait for the selector to appear
-                        page.wait_for_selector(".bold", timeout=10000)
-
-                        # Parse the page content
-                        soup = BeautifulSoup(page.content(), "html.parser")
-
-                        # Extract posts using the same logic as before
-                        rows = soup.find_all("tr")
-                        i = 0
-                        while i < len(rows) - 1:
-                            try:
-                                # Check if this is a header row
-                                header_row = rows[i]
-                                header_cell = header_row.find("td", class_="bold")
-                                if not header_cell:
-                                    i += 1
-                                    continue
-
-                                # Extract post metadata
-                                time_span = header_cell.find("span", class_="s")
-                                if not time_span:
-                                    i += 1
-                                    continue
-
-                                datetime_text = time_span.get_text(strip=True)
-                                # Parse date and time
-                                if " On " in datetime_text:
-                                    time_str, date_str = datetime_text.split(' On ', 1)
-                                else:
-                                    time_str, date_str = datetime_text, "Today"
-
-                                # Extract section, topic, and other metadata (same as before)
-                                # Example placeholders for missing logic
-                                section = "Section Placeholder"
-                                topic = "Topic Placeholder"
-                                topic_url = "URL Placeholder"
-                                post_text = "Post Text Placeholder"
-                                post_date = date_str
-                                post_time = time_str
-                                timestamp = "Timestamp Placeholder"
-                                likes = 0
-                                shares = 0
-
-                                # Add to posts data
-                                posts_data.append({
-                                    'post_id': f"{username}_{len(posts_data)}",
-                                    'username': username,
-                                    'post_text': post_text,
-                                    'post_date': post_date,
-                                    'post_time': post_time,
-                                    'timestamp': timestamp,
-                                    'section': section,
-                                    'topic': topic,
-                                    'topic_url': topic_url,
-                                    'likes': likes,
-                                    'shares': shares
-                                })
-                                i += 2
-                            except Exception as e:
-                                print(f"Error processing post: {str(e)}")
-                                i += 1
-                                continue
-
-                        # Find next page link
-                        next_page = None
-                        for a_tag in soup.find_all("a"):
-                            if a_tag.get_text(strip=True) == "Next":
-                                next_page = a_tag
-                                break
-
-                        if not next_page:
-                            print(f"No next page found for {username}")
-                            break
-
-                        url = "https://www.nairaland.com" + next_page['href']
-                        print(f"Next page URL: {url}")
-                        time.sleep(delay)
-                        break  # Break out of retry loop if successful
-                    except Exception as e:
-                        print(f"Error on attempt {attempt + 1}: {str(e)}")
-                        time.sleep(2)
-
-                # Break if no next page
-                if not next_page:
-                    break
-
-            browser.close()
-    except Exception as e:
-        print(f"Error scraping {username}: {str(e)}")
-
-    print(f"Scraped {len(posts_data)} posts for {username}")
-    return {
-        'username': username,
-        'posts': posts_data,
-        'registration_date': "Registration Date Placeholder",  # Update with actual logic
-        'post_count': len(posts_data)
-    }
+def scrape_user_posts(usernames):
+    process = CrawlerProcess(get_project_settings())
+    process.crawl(NairalandSpider, usernames=usernames)
+    process.start()
 
 def clean_text(text):
     if not text:
@@ -1023,18 +914,10 @@ def main():
         elif input_method == "Use Default List":
             usernames = default_usernames
             st.write(f"Using {len(usernames)} default usernames")
-        # Scraping parameters
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            pages_per_user = st.number_input("Pages per user", min_value=1, max_value=100, value=50)
-        with col2:
-            max_workers = st.number_input("Concurrent workers", min_value=1, max_value=10, value=5)
-        with col3:
-            delay = st.number_input("Delay between requests (seconds)", min_value=0.5, max_value=5.0, value=1.0, step=0.5)
         # Start scraping
         if st.button("Start Scraping") and usernames:
-            # Perform scraping
-            results = scrape_multiple_users(usernames, pages_per_user, max_workers, delay)
+            # Perform scraping using Scrapy
+            scrape_user_posts(usernames)
             # Save to database
             save_to_database(results, conn)
             # Display summary
