@@ -929,12 +929,14 @@ def generate_insights(df, freq_stats, content_sim_df, section_overlap_df, topic_
 def main():
     # Initialize database
     conn = init_db()
+    
     # Sidebar for navigation
     st.sidebar.title("Navigation")
     page = st.sidebar.radio(
         "Select Page",
         ["Scrape Profiles", "View Data", "Analysis", "Visualizations", "Coordination Detection", "Export Results"]
     )
+    
     # List of usernames to analyze (for demo purposes)
     default_usernames = [
         "elusive001", "botragelad", "holiness2100", "uprightness100", "truthU87",
@@ -943,28 +945,46 @@ def main():
         "WriteerNig", "WriterrNig", "WritterNig", "WriiterNig", "WrriterNig", "WriterNigg",
         "WriterNiiig", "WriterNiig", "Ken6488", "Dalil8", "Slavaukraini", "Redscorpion", "Nigeriazoo"
     ]
+    
     # Scrape Profiles page
     if page == "Scrape Profiles":
         st.header("Scrape Nairaland User Profiles")
+        
         # Input method selection
         input_method = st.radio(
             "Select Input Method",
             ["Enter Usernames", "Upload File", "Use Default List"]
         )
+        
         usernames = []
         if input_method == "Enter Usernames":
             username_input = st.text_area("Enter usernames (one per line)")
             if username_input:
+                # Correctly split by newline character '\n'
                 usernames = [name.strip() for name in username_input.split('\n') if name.strip()]
+                print(f"Parsed usernames from input: {usernames}")  # Debugging statement
+        
         elif input_method == "Upload File":
             uploaded_file = st.file_uploader("Upload a file with usernames (one per line)", type=["txt", "csv"])
             if uploaded_file:
                 content = uploaded_file.read().decode("utf-8")
+                # Correctly split by newline character '\n'
                 usernames = [name.strip() for name in content.split('\n') if name.strip()]
+                print(f"Parsed usernames from file: {usernames}")  # Debugging statement
+        
         elif input_method == "Use Default List":
+            # Ensure default_usernames is defined
+            default_usernames = [
+                "elusive001", "botragelad", "holiness2100", "uprightness100", "truthU87",
+                "biodun556", "coronaVirusPro", "NigerianXXX", "Kingsnairaland", "Betscoreodds",
+                "Nancy2020", "Nancy1986", "Writernig", "WritterNg", "WriiterNg", "WrriterNg",
+                "WriteerNig", "WriterrNig", "WritterNig", "WriiterNig", "WrriterNig", "WriterNigg",
+                "WriterNiiig", "WriterNiig", "Ken6488", "Dalil8", "Slavaukraini", "Redscorpion", "Nigeriazoo"
+            ]
             usernames = default_usernames
+            print(f"Using default usernames: {usernames}")  # Debugging statement
             st.write(f"Using {len(usernames)} default usernames")
-
+        
         # Scraping parameters
         col1, col2, col3 = st.columns(3)
         with col1:
@@ -973,19 +993,13 @@ def main():
             max_workers = st.number_input("Concurrent workers", min_value=1, max_value=10, value=5)
         with col3:
             delay = st.number_input("Delay between requests (seconds)", min_value=0.5, max_value=5.0, value=1.0, step=0.5)
-
+        
         # Start scraping
         if st.button("Start Scraping") and usernames:
-            # Perform scraping
+            print(f"Starting scraping for {len(usernames)} users: {usernames}")  # Debugging statement
             results = scrape_multiple_users(usernames, pages_per_user, max_workers, delay)
-            
-            # Save to database
             save_to_database(results, conn)
-            
-            # Display summary
             st.success(f"Scraping completed for {len(results)} users")
-            
-            # Show summary statistics
             total_posts = sum(user['post_count'] for user in results)
             st.write(f"Total posts scraped: {total_posts}")
             
@@ -995,7 +1009,8 @@ def main():
             
             post_count_df = pd.DataFrame(post_counts, columns=["Username", "Post Count"])
             st.write("Posts per user:")
-            st.dataframe(post_count_df) 
+            st.dataframe(post_count_df)
+    
     # View Data page
     elif page == "View Data":
         st.header("View Scraped Data")
