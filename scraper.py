@@ -153,7 +153,7 @@ def scrape_user_posts_with_playwright(username, pages=10, delay=1):
                         page.goto(url, timeout=15000)
 
                         # Wait for the page to finish loading
-                        page.wait_for_load_state("networkidle")
+                        page.wait_for_load_state("networkidle0")
 
                         # Wait for the selector to appear
                         page.wait_for_selector(".bold", timeout=10000)
