@@ -11,9 +11,7 @@ beautifulsoup4>=4.12.2
 lxml>=4.9.3
 webdriver-manager==4.0.0
 playwright==1.40.0
-scrapy
-spacy==3.7.1
-https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.7.1/en_core_web_sm-3.7.1.tar.gz
+scrapy==2.12.0
 
 # Data processing and analysis
 nltk>=3.8.1
