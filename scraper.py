@@ -1019,7 +1019,7 @@ def main():
             post_counts.sort(key=lambda x: x[1], reverse=True)
             post_count_df = pd.DataFrame(post_counts, columns=["Username", "Post Count"])
             st.write("Posts per user:")
-            st.dataframe(post_count_df)    
+            st.dataframe(post_count_df)  
     # View Data page
     elif page == "View Data":
         st.header("View Scraped Data")
