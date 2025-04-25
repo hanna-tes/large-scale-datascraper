@@ -32,8 +32,9 @@ import os
 from tqdm import tqdm
 import io
 import json
+import subprocess
 try:
-    subprocess.run(["playwright", "install"])
+    subprocess.run("playwright install", shell=True)
 except FileNotFoundError:
     print("Playwright is not installed. Please install it with 'pip install playwright'")
 
