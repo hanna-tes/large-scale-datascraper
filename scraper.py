@@ -964,6 +964,16 @@ def main():
         elif input_method == "Use Default List":
             usernames = default_usernames
             st.write(f"Using {len(usernames)} default usernames")
+
+        # Scraping parameters
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            pages_per_user = st.number_input("Pages per user", min_value=1, max_value=100, value=50)
+        with col2:
+            max_workers = st.number_input("Concurrent workers", min_value=1, max_value=10, value=5)
+        with col3:
+            delay = st.number_input("Delay between requests (seconds)", min_value=0.5, max_value=5.0, value=1.0, step=0.5)
+
         # Start scraping
         if st.button("Start Scraping") and usernames:
             # Perform scraping
