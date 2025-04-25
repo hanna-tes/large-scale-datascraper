@@ -60,16 +60,10 @@ def download_nltk_resources():
 download_nltk_resources()
 
 # Initialize database
-import psycopg2
+import sqlite3
 
 def init_db():
-    conn = psycopg2.connect(
-        database="nairaland_data",
-        user="nairaland_user",
-        password="password",
-        host="localhost",
-        port="5432"
-    )
+    conn = sqlite3.connect('nairaland_data.db')
     c = conn.cursor()
     # Create users table
     c.execute('''
@@ -485,14 +479,14 @@ def save_to_database(data, conn):
         # Insert or update user
         cursor.execute('''
         INSERT OR REPLACE INTO users (username, profile_url, registration_date, last_scrape_date)
-        VALUES (%s, %s, %s, %s)
+        VALUES (?, ?, ?, ?)
         ''', (username, profile_url, registration_date, now))
         # Insert posts
         for post in user_data['posts']:
             cursor.execute('''
             INSERT OR REPLACE INTO posts 
             (post_id, username, post_text, post_date, post_time, timestamp, section, topic, topic_url, likes, shares)
-            VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
                 post['post_id'],
                 post['username'],
