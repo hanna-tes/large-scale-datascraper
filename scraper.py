@@ -140,23 +140,21 @@ def requests_get(url, headers, timeout):
     return requests.get(url, headers=headers, timeout=timeout)
     
 from playwright.sync_api import sync_playwright
-def scrape_user_posts(usernames):
+def scrape_user_posts(username, pages=10, delay=1):
     posts_data = []
+    registration_date = scrape_user_profile(username)
+    
     try:
+        url = f"https://www.nairaland.com/{username}/posts"
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             context = browser.new_context()
             page = context.new_page()
+            page.goto(url)
 
-            for username in usernames:
-                url = f"https://www.nairaland.com/{username}/posts"
-                page.goto(url)
-
+            for page_num in range(pages):
                 # Wait for the page to finish loading
                 page.wait_for_load_state("networkidle0")
-
-                # Wait for the selector to appear
-                page.wait_for_selector(".bold", timeout=10000)
 
                 # Parse the page content
                 soup = BeautifulSoup(page.content(), "html.parser")
@@ -169,6 +167,7 @@ def scrape_user_posts(usernames):
                         # Check if this is a header row
                         header_row = rows[i]
                         header_cell = header_row.find("td", class_="bold")
+
                         if not header_cell:
                             i += 1
                             continue
@@ -186,7 +185,7 @@ def scrape_user_posts(usernames):
                         else:
                             time_str, date_str = datetime_text, "Today"
 
-                # Extract section, topic, and other metadata (same as before)
+                        # Extract section, topic, and other metadata (same as before)
                         # Example placeholders for missing logic
                         section = "Section Placeholder"
                         topic = "Topic Placeholder"
@@ -218,14 +217,27 @@ def scrape_user_posts(usernames):
                         i += 1
                         continue
 
+                # Find next page link
+                next_page = page.query_selector("a.next")
+                if not next_page:
+                    print(f"No next page found for {username}")
+                    break
+
+                page.click("a.next")
+                page.wait_for_load_state("networkidle0")
+                url = "https://www.nairaland.com" + next_page['href']
+                print(f"Next page URL: {url}")
+                time.sleep(delay)
+
             browser.close()
     except Exception as e:
         print(f"Error scraping {username}: {str(e)}")
 
+    print(f"Scraped {len(posts_data)} posts for {username}")
     return {
         'username': username,
         'posts': posts_data,
-        'registration_date': "Registration Date Placeholder",  # Update with actual logic
+        'registration_date': registration_date,
         'post_count': len(posts_data)
     }
 
