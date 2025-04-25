@@ -145,14 +145,22 @@ def scrape_user_posts_with_playwright(username, pages=10, delay=1):
             browser = p.chromium.launch(headless=True)
             context = browser.new_context()
             page = context.new_page()
-            page.goto(url, timeout=15000)
-            
-            # Wait for the page to finish loading
-            page.wait_for_load_state("networkidle0")
-            
-            # Wait for the selector to appear
-            page.wait_for_selector(".bold", timeout=10000)
-                        
+
+            for page_num in range(pages):
+                for attempt in range(3):  # Retry up to 3 times
+                    try:
+                        print(f"Scraping page {page_num + 1} for {username}, URL: {url}")
+                        page.goto(url, timeout=15000)
+
+                        # Wait for the page to finish loading
+                        page.wait_for_load_state("networkidle")
+
+                        # Wait for the selector to appear
+                        page.wait_for_selector(".bold", timeout=10000)
+
+                        # Parse the page content
+                        soup = BeautifulSoup(page.content(), "html.parser")
+
                         # Extract posts using the same logic as before
                         rows = soup.find_all("tr")
                         i = 0
@@ -164,20 +172,32 @@ def scrape_user_posts_with_playwright(username, pages=10, delay=1):
                                 if not header_cell:
                                     i += 1
                                     continue
-                                # Extract post metadata (same as before)
+
+                                # Extract post metadata
                                 time_span = header_cell.find("span", class_="s")
                                 if not time_span:
                                     i += 1
                                     continue
+
                                 datetime_text = time_span.get_text(strip=True)
                                 # Parse date and time
                                 if " On " in datetime_text:
                                     time_str, date_str = datetime_text.split(' On ', 1)
                                 else:
                                     time_str, date_str = datetime_text, "Today"
+
                                 # Extract section, topic, and other metadata (same as before)
-                                # ...
-                                
+                                # Example placeholders for missing logic
+                                section = "Section Placeholder"
+                                topic = "Topic Placeholder"
+                                topic_url = "URL Placeholder"
+                                post_text = "Post Text Placeholder"
+                                post_date = date_str
+                                post_time = time_str
+                                timestamp = "Timestamp Placeholder"
+                                likes = 0
+                                shares = 0
+
                                 # Add to posts data
                                 posts_data.append({
                                     'post_id': f"{username}_{len(posts_data)}",
@@ -197,34 +217,39 @@ def scrape_user_posts_with_playwright(username, pages=10, delay=1):
                                 print(f"Error processing post: {str(e)}")
                                 i += 1
                                 continue
-                        
+
                         # Find next page link
                         next_page = None
                         for a_tag in soup.find_all("a"):
                             if a_tag.get_text(strip=True) == "Next":
                                 next_page = a_tag
                                 break
+
                         if not next_page:
                             print(f"No next page found for {username}")
                             break
+
                         url = "https://www.nairaland.com" + next_page['href']
                         print(f"Next page URL: {url}")
                         time.sleep(delay)
-                        break
+                        break  # Break out of retry loop if successful
                     except Exception as e:
-                        print(f"Error on attempt {attempt+1}: {str(e)}")
+                        print(f"Error on attempt {attempt + 1}: {str(e)}")
                         time.sleep(2)
+
                 # Break if no next page
                 if not next_page:
                     break
+
             browser.close()
     except Exception as e:
         print(f"Error scraping {username}: {str(e)}")
+
     print(f"Scraped {len(posts_data)} posts for {username}")
     return {
         'username': username,
         'posts': posts_data,
-        'registration_date': registration_date,
+        'registration_date': "Registration Date Placeholder",  # Update with actual logic
         'post_count': len(posts_data)
     }
 
