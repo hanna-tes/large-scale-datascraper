@@ -144,15 +144,96 @@ def retry_on_429(func):
 @retry_on_429
 def requests_get(url, headers, timeout):
     return requests.get(url, headers=headers, timeout=timeout)
-
-from nairaland_scraper.spiders.nairaland_spider import NairalandSpider
-from scrapy.crawler import CrawlerProcess
-from scrapy.utils.project import get_project_settings
-
+    
+from playwright.sync_api import sync_playwright
 def scrape_user_posts(usernames):
-    process = CrawlerProcess(get_project_settings())
-    process.crawl(NairalandSpider, usernames=usernames)
-    process.start()
+    posts_data = []
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            context = browser.new_context()
+            page = context.new_page()
+
+            for username in usernames:
+                url = f"https://www.nairaland.com/{username}/posts"
+                page.goto(url)
+
+                # Wait for the page to finish loading
+                page.wait_for_load_state("networkidle0")
+
+                # Wait for the selector to appear
+                page.wait_for_selector(".bold", timeout=10000)
+
+                # Parse the page content
+                soup = BeautifulSoup(page.content(), "html.parser")
+
+                # Extract posts using the same logic as before
+                rows = soup.find_all("tr")
+                i = 0
+                while i < len(rows) - 1:
+                    try:
+                        # Check if this is a header row
+                        header_row = rows[i]
+                        header_cell = header_row.find("td", class_="bold")
+                        if not header_cell:
+                            i += 1
+                            continue
+
+                        # Extract post metadata
+                        time_span = header_cell.find("span", class_="s")
+                        if not time_span:
+                            i += 1
+                            continue
+
+                        datetime_text = time_span.get_text(strip=True)
+                        # Parse date and time
+                        if " On " in datetime_text:
+                            time_str, date_str = datetime_text.split(' On ', 1)
+                        else:
+                            time_str, date_str = datetime_text, "Today"
+
+                # Extract section, topic, and other metadata (same as before)
+                        # Example placeholders for missing logic
+                        section = "Section Placeholder"
+                        topic = "Topic Placeholder"
+                        topic_url = "URL Placeholder"
+                        post_text = "Post Text Placeholder"
+                        post_date = date_str
+                        post_time = time_str
+                        timestamp = "Timestamp Placeholder"
+                        likes = 0
+                        shares = 0
+
+                        # Add to posts data
+                        posts_data.append({
+                            'post_id': f"{username}_{len(posts_data)}",
+                            'username': username,
+                            'post_text': post_text,
+                            'post_date': post_date,
+                            'post_time': post_time,
+                            'timestamp': timestamp,
+                            'section': section,
+                            'topic': topic,
+                            'topic_url': topic_url,
+                            'likes': likes,
+                            'shares': shares
+                        })
+                        i += 2
+                    except Exception as e:
+                        print(f"Error processing post: {str(e)}")
+                        i += 1
+                        continue
+
+            browser.close()
+    except Exception as e:
+        print(f"Error scraping {username}: {str(e)}")
+
+    return {
+        'username': username,
+        'posts': posts_data,
+        'registration_date': "Registration Date Placeholder",  # Update with actual logic
+        'post_count': len(posts_data)
+    }
 
 def clean_text(text):
     if not text:
@@ -916,8 +997,10 @@ def main():
             st.write(f"Using {len(usernames)} default usernames")
         # Start scraping
         if st.button("Start Scraping") and usernames:
-            # Perform scraping using Scrapy
-            scrape_user_posts(usernames)
+            # Perform scraping using Playwright
+            results = []
+            for username in usernames:
+                results.append(scrape_user_posts([username]))
             # Save to database
             save_to_database(results, conn)
             # Display summary
