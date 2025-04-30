@@ -824,7 +824,9 @@ def main():
         if input_method == "Enter Usernames":
             username_input = st.text_area("Enter usernames (one per line)")
             if username_input:
+                # Correctly split by newline character '\n'
                 usernames = [name.strip() for name in username_input.split('\n') if name.strip()]
+                print(f"Parsed usernames from input: {usernames}")  # Debugging statement
                 
         elif input_method == "Upload File":
             uploaded_file = st.file_uploader("Upload a file with usernames (one per line)", type=["txt", "csv"])
