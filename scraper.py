@@ -1183,8 +1183,6 @@ def main():
                                 mime="application/json"
                             )
 
-    # Close database connection
-    conn.close()
 
 if __name__ == "__main__":
     main()
