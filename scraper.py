@@ -73,7 +73,6 @@ def clean_text(text):
 def parse_date_time(date_str, time_str):
     try:
         now = datetime.datetime.now()
-        # Clean up strings
         date_str = date_str.strip()
         time_str = time_str.strip()
         if "Today" in date_str:
@@ -81,37 +80,13 @@ def parse_date_time(date_str, time_str):
         elif "Yesterday" in date_str:
             date = (now - datetime.timedelta(days=1)).date()
         else:
-            # Handle dates like "Apr 01", "Apr 01, 2024"
             if ',' in date_str:
-                # Format: "Apr 01, 2024"
-                try:
-                    date = datetime.datetime.strptime(date_str, "%b %d, %Y").date()
-                except:
-                    try:
-                        date = datetime.datetime.strptime(date_str, "%B %d, %Y").date()
-                    except:
-                        print(f"Failed to parse date with comma: {date_str}")
-                        date = now.date()
+                date = datetime.datetime.strptime(date_str, "%b %d, %Y").date()
             else:
-                # Format: "Apr 01" (no year)
-                try:
-                    # Parse without year, then add current year
-                    date_without_year = datetime.datetime.strptime(date_str, "%b %d")
-                    date = date_without_year.replace(year=now.year).date()
-                    # If this date is in the future, use last year
-                    if date > now.date():
-                        date = date.replace(year=now.year - 1)
-                except:
-                    try:
-                        date_without_year = datetime.datetime.strptime(date_str, "%B %d")
-                        date = date_without_year.replace(year=now.year).date()
-                        # If this date is in the future, use last year
-                        if date > now.date():
-                            date = date.replace(year=now.year - 1)
-                    except:
-                        print(f"Failed to parse date without comma: {date_str}")
-                        date = now.date()
-        # Parse time (e.g., "10:30am")
+                date_without_year = datetime.datetime.strptime(date_str, "%b %d")
+                date = date_without_year.replace(year=now.year).date()
+                if date > now.date():
+                    date = date.replace(year=now.year - 1)
         time_match = re.search(r'(\d+):(\d+)([ap]m)', time_str, re.IGNORECASE)
         if time_match:
             hour, minute, ampm = time_match.groups()
@@ -122,9 +97,7 @@ def parse_date_time(date_str, time_str):
                 hour = 0
             time_obj = datetime.time(hour, int(minute))
         else:
-            print(f"Failed to parse time: {time_str}")
             time_obj = datetime.time(0, 0)
-        # Combine date and time
         datetime_obj = datetime.datetime.combine(date, time_obj)
         timestamp = int(datetime_obj.timestamp())
         return date.strftime('%Y-%m-%d'), time_obj.strftime('%H:%M'), timestamp
@@ -133,15 +106,15 @@ def parse_date_time(date_str, time_str):
         return now.strftime('%Y-%m-%d'), "00:00", int(now.timestamp())
 
 def scrape_user_profile(username):
-    """Scrape registration date from profile page using Playwright."""
     profile_url = f"https://www.nairaland.com/{username}"
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
-            context = browser.new_context()
+            context = browser.new_context(
+                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            )
             page = context.new_page()
             page.goto(profile_url, timeout=15000)
-            # Wait for the page to load dynamically
             page.wait_for_selector("p", timeout=10000)
             soup = BeautifulSoup(page.content(), "html.parser")
             for p_tag in soup.find_all('p'):
@@ -159,110 +132,41 @@ def scrape_user_topics(username):
         url = f"https://www.nairaland.com/{username}"
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True, args=['--no-sandbox', '--disable-setuid-sandbox'])
-            # Set custom User-Agent
             context = browser.new_context(
                 user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
             )
             page = context.new_page()
             page.goto(url, timeout=15000)
-            # Wait for the page to finish loading
-            page.wait_for_load_state("networkidle")
-            # Wait for the selector to appear
-            page.wait_for_selector(".threadTitle", timeout=10000)
-            # Get the page content
-            html = page.content()
-            soup = BeautifulSoup(html, 'html.parser')
-            # Find all topic rows
-            topic_rows = soup.find_all("tr", class_="threadRow")
-            for topic_row in topic_rows:
-                try:
-                    # Extract topic metadata
-                    topic_title = topic_row.find("a", class_="threadTitle").get_text(strip=True)
-                    topic_url = topic_row.find("a", class_="threadTitle").get("href")
-                    # Scrape topic contents
-                    topic_contents = scrape_topic_contents(topic_url)
-                    # Add to topics data
-                    topics_data.append({
-                        'topic_title': topic_title,
-                        'topic_url': topic_url,
-                        'topic_contents': topic_contents
-                    })
-                except Exception as e:
-                    print(f"Error processing topic: {str(e)}")
+            while True:
+                page.wait_for_load_state("networkidle")
+                page.wait_for_selector(".threadTitle", timeout=10000)
+                html = page.content()
+                soup = BeautifulSoup(html, 'html.parser')
+                topic_rows = soup.find_all("tr", class_="threadRow")
+                for row in topic_rows:
+                    try:
+                        topic_title = row.find("a", class_="threadTitle").get_text(strip=True)
+                        topic_url = row.find("a", class_="threadTitle").get("href")
+                        topics_data.append({
+                            'topic_title': topic_title,
+                            'topic_url': topic_url
+                        })
+                    except Exception as e:
+                        print(f"Error processing topic: {str(e)}")
+                next_page = page.query_selector("a.next")
+                if not next_page:
+                    break
+                page.click("a.next")
+                time.sleep(1)
             browser.close()
     except Exception as e:
         print(f"Error scraping topics for {username}: {str(e)}")
     return topics_data
 
-def scrape_topic_contents(topic_url):
-    topic_contents = []
-    try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True, args=['--no-sandbox', '--disable-setuid-sandbox'])
-            # Set custom User-Agent
-            context = browser.new_context(
-                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-            )
-            page = context.new_page()
-            page.goto(topic_url, timeout=15000)
-            # Wait for the page to finish loading
-            page.wait_for_load_state("networkidle")
-            # Wait for the selector to appear
-            page.wait_for_selector(".messageHeader", timeout=10000)
-            # Get the page content
-            html = page.content()
-            soup = BeautifulSoup(html, 'html.parser')
-            # Find all post rows
-            post_rows = soup.find_all("tr", class_="messageRow")
-            for post_row in post_rows:
-                try:
-                    # Extract post metadata
-                    post_text = post_row.find("div", class_="messageContent").get_text(strip=True)
-                    post_date = post_row.find("span", class_="messageFooter").find("span").get_text(strip=True)
-                    post_time = post_row.find("span", class_="messageFooter").find("span", class_="smallText").get_text(strip=True)
-                    # Add to topic contents
-                    topic_contents.append({
-                        'post_text': post_text,
-                        'post_date': post_date,
-                        'post_time': post_time
-                    })
-                except Exception as e:
-                    print(f"Error processing post: {str(e)}")
-            # Scrape next pages
-            next_page = page.query_selector("a.next")
-            while next_page:
-                page.click("a.next")
-                page.wait_for_load_state("networkidle")
-                page.wait_for_selector(".messageHeader", timeout=10000)
-                # Get the page content
-                html = page.content()
-                soup = BeautifulSoup(html, 'html.parser')
-                # Find all post rows
-                post_rows = soup.find_all("tr", class_="messageRow")
-                for post_row in post_rows:
-                    try:
-                        # Extract post metadata
-                        post_text = post_row.find("div", class_="messageContent").get_text(strip=True)
-                        post_date = post_row.find("span", class_="messageFooter").find("span").get_text(strip=True)
-                        post_time = post_row.find("span", class_="messageFooter").find("span", class_="smallText").get_text(strip=True)
-                        # Add to topic contents
-                        topic_contents.append({
-                            'post_text': post_text,
-                            'post_date': post_date,
-                            'post_time': post_time
-                        })
-                    except Exception as e:
-                        print(f"Error processing post: {str(e)}")
-                next_page = page.query_selector("a.next")
-            browser.close()
-    except Exception as e:
-        print(f"Error scraping topic contents: {str(e)}")
-    return topic_contents
 def scrape_multiple_users(usernames, max_workers=5, delay=1):
     results = []
     with st.spinner(f"Scraping data for {len(usernames)} users..."):
         progress_bar = st.progress(0)
-        # Use a wrapper to isolate Streamlit context
         def worker(username):
             try:
                 return {
@@ -291,19 +195,14 @@ def main():
         ["Scrape Profiles", "View Data", "Analysis", "Visualizations", "Coordination Detection", "Export Results"]
     )
     
-    # List of default usernames
     default_usernames = [
         "elusive001", "botragelad", "holiness2100", "uprightness100", "truthU87",
         "biodun556", "coronaVirusPro", "NigerianXXX", "Kingsnairaland", "Betscoreodds",
-        "Nancy2020", "Nancy1986", "Writernig", "WritterNg", "WriiterNg", "WrriterNg",
-        "WriteerNig", "WriterrNig", "WritterNig", "WriiterNig", "WrriterNig", "WriterNigg",
-        "WriterNiiig", "WriterNiig", "Ken6488", "Dalil8", "Slavaukraini", "Redscorpion", "Nigeriazoo"
+        "Nancy2020", "Nancy1986", "Writernig", "WritterNg"
     ]
     
-    # Scrape Profiles page
     if page == "Scrape Profiles":
         st.header("Scrape Nairaland User Profiles")
-        # Input method selection
         input_method = st.radio(
             "Select Input Method",
             ["Enter Usernames", "Use Default List"]
@@ -317,19 +216,16 @@ def main():
             usernames = default_usernames
             st.write(f"Using {len(usernames)} default usernames")
         
-        # Scraping parameters
         col1, col2 = st.columns(2)
         with col1:
             max_workers = st.number_input("Concurrent workers", min_value=1, max_value=10, value=5)
         with col2:
             delay = st.number_input("Delay between requests (seconds)", min_value=0.5, max_value=5.0, value=1.0, step=0.5)
         
-        # Start scraping
         if st.button("Start Scraping") and usernames:
             results = scrape_multiple_users(usernames, max_workers, delay)
             st.success(f"Scraping completed for {len(results)} users")
             
-            # Flatten topics for export
             all_topics = []
             for user in results:
                 for topic in user['topics']:
@@ -341,14 +237,12 @@ def main():
             df = pd.DataFrame(all_topics)
             st.session_state['data'] = df
             
-            # Display topic counts per user
             topic_counts = [(user['username'], len(user['topics'])) for user in results]
             topic_counts.sort(key=lambda x: x[1], reverse=True)
             topic_count_df = pd.DataFrame(topic_counts, columns=["Username", "Topic Count"])
             st.write("Topics per user:")
             st.dataframe(topic_count_df)
     
-    # View Data page
     elif page == "View Data":
         if 'data' not in st.session_state or st.session_state['data'].empty:
             st.warning("No data available. Please scrape some profiles first.")
@@ -357,7 +251,6 @@ def main():
             st.write(f"Total topics: {len(df)}")
             st.dataframe(df)
     
-    # Export Results page
     elif page == "Export Results":
         if 'data' not in st.session_state or st.session_state['data'].empty:
             st.warning("No data available. Please scrape some profiles first.")
