@@ -47,247 +47,140 @@ This dashboard scrapes user profiles from Nairaland and analyzes potential coord
 Upload a list of usernames to analyze topics created, posting patterns, content similarity, and potential coordinated behavior.
 """)
 
-# Download NLTK resources
-@st.cache_resource
-def download_nltk_resources():
-    nltk.download('punkt')
-    nltk.download('stopwords')
+# Default user list
+default_usernames = [
+    "elusive001", "botragelad", "holiness2100", "uprightness100", "truthU87",
+    "biodun556", "coronaVirusPro", "NigerianXXX", "Kingsnairaland", "Betscoreodds",
+    "Nancy2020", "Nancy1986", "Writernig", "WritterNg"
+]
 
-download_nltk_resources()
-
-# Helper functions for scraping
 def clean_text(text):
     if not text:
         return ""
-    # Remove HTML tags
     text = re.sub(r'<.*?>', ' ', text)
-    # Remove URLs
     text = re.sub(r'https?://\S+|www\.\S+', ' ', text)
-    # Remove special characters and numbers
     text = re.sub(r'[^\w\s]', ' ', text)
     text = re.sub(r'\d+', ' ', text)
-    # Remove extra whitespace
     text = re.sub(r'\s+', ' ', text)
     return text.strip()
 
-def parse_date_time(date_str, time_str):
-    try:
-        now = datetime.datetime.now()
-        date_str = date_str.strip()
-        time_str = time_str.strip()
-        if "Today" in date_str:
-            date = now.date()
-        elif "Yesterday" in date_str:
-            date = (now - datetime.timedelta(days=1)).date()
-        else:
-            if ',' in date_str:
-                date = datetime.datetime.strptime(date_str, "%b %d, %Y").date()
-            else:
-                date_without_year = datetime.datetime.strptime(date_str, "%b %d")
-                date = date_without_year.replace(year=now.year).date()
-                if date > now.date():
-                    date = date.replace(year=now.year - 1)
-        time_match = re.search(r'(\d+):(\d+)([ap]m)', time_str, re.IGNORECASE)
-        if time_match:
-            hour, minute, ampm = time_match.groups()
-            hour = int(hour)
-            if ampm.lower() == 'pm' and hour < 12:
-                hour += 12
-            elif ampm.lower() == 'am' and hour == 12:
-                hour = 0
-            time_obj = datetime.time(hour, int(minute))
-        else:
-            time_obj = datetime.time(0, 0)
-        datetime_obj = datetime.datetime.combine(date, time_obj)
-        timestamp = int(datetime_obj.timestamp())
-        return date.strftime('%Y-%m-%d'), time_obj.strftime('%H:%M'), timestamp
-    except Exception as e:
-        print(f"Error parsing date/time: {str(e)}, date_str: {date_str}, time_str: {time_str}")
-        return now.strftime('%Y-%m-%d'), "00:00", int(now.timestamp())
+def parse_post_content(soup):
+    content_div = soup.find("div", class_="narrow")
+    return clean_text(content_div.get_text(strip=True)) if content_div else ""
 
-def scrape_user_profile(username):
-    profile_url = f"https://www.nairaland.com/{username}"
+def get_topic_details(page, topic_url):
+    page.goto(topic_url)
+    page.wait_for_load_state("networkidle")
+    html = page.content()
+    soup = BeautifulSoup(html, 'html.parser')
+
+    content = parse_post_content(soup)
+    
+    # Extract all "narrow" divs as replies (original post is the first)
+    reply_divs = soup.find_all("div", class_="narrow")
+    replies = [clean_text(div.get_text(strip=True)) for div in reply_divs[1:]]  # skip original post
+
+    # Try to extract likes and shares from the soup
+    try:
+        likes_tag = soup.find("span", string=re.compile("Like", re.IGNORECASE))
+        likes = int(re.search(r'\d+', likes_tag.text).group()) if likes_tag else 0
+    except:
+        likes = 0
+
+    try:
+        shares_tag = soup.find("span", string=re.compile("Share", re.IGNORECASE))
+        shares = int(re.search(r'\d+', shares_tag.text).group()) if shares_tag else 0
+    except:
+        shares = 0
+
+    return content, len(replies), replies, likes, shares
+
+def scrape_user_topics(username):
+    results = []
     try:
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
-            context = browser.new_context(
-                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-            )
+            context = browser.new_context()
             page = context.new_page()
-            page.goto(profile_url, timeout=15000)
-            page.wait_for_selector("p", timeout=10000)
-            soup = BeautifulSoup(page.content(), "html.parser")
-            for p_tag in soup.find_all('p'):
-                p_text = p_tag.get_text(strip=True)
-                if "Time registered:" in p_text:
-                    return p_text.split("Time registered:")[1].strip()
-            browser.close()
-    except Exception as e:
-        print(f"Error fetching profile: {str(e)}")
-    return None
-
-def scrape_user_topics(username):
-    topics_data = []
-    try:
-        url = f"https://www.nairaland.com/{username}"
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True, args=['--no-sandbox', '--disable-setuid-sandbox'])
-            context = browser.new_context(
-                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-            )
-            page = context.new_page()
-            page.goto(url, timeout=15000)
+            url = f"https://www.nairaland.com/{username}/topics"
+            page.goto(url)
             while True:
-                page.wait_for_load_state("networkidle")
                 page.wait_for_selector(".threadTitle", timeout=10000)
                 html = page.content()
-                soup = BeautifulSoup(html, 'html.parser')
-                topic_rows = soup.find_all("tr", class_="threadRow")
-                for row in topic_rows:
+                soup = BeautifulSoup(html, "html.parser")
+                rows = soup.find_all("tr", class_="threadRow")
+                for row in rows:
                     try:
-                        topic_title = row.find("a", class_="threadTitle").get_text(strip=True)
-                        topic_url = row.find("a", class_="threadTitle").get("href")
-                        topics_data.append({
-                            'topic_title': topic_title,
-                            'topic_url': topic_url
+                        title_tag = row.find("a", class_="threadTitle")
+                        topic_title = title_tag.get_text(strip=True)
+                        topic_url = "https://www.nairaland.com" + title_tag.get("href")
+                        category = row.find("a", class_="board")
+                        category_name = category.get_text(strip=True) if category else "Unknown"
+                        
+                        content, replies_count, replies_content, likes, shares = get_topic_details(page, topic_url)
+                        results.append({
+                            "username": username,
+                            "category": category_name,
+                            "title": topic_title,
+                            "url": topic_url,
+                            "content": content,
+                            "replies": replies_count,
+                            "replies_content": replies_content,
+                            "likes": likes,
+                            "shares": shares
                         })
                     except Exception as e:
-                        print(f"Error processing topic: {str(e)}")
-                next_page = page.query_selector("a.next")
-                if not next_page:
+                        print(f"Error parsing topic row: {str(e)}")
+                next_button = page.query_selector("a.next")
+                if next_button:
+                    next_button.click()
+                    time.sleep(1)
+                else:
                     break
-                page.click("a.next")
-                time.sleep(1)
             browser.close()
     except Exception as e:
         print(f"Error scraping topics for {username}: {str(e)}")
-    return topics_data
-
-def scrape_multiple_users(usernames, max_workers=5, delay=1):
-    results = []
-    with st.spinner(f"Scraping data for {len(usernames)} users..."):
-        progress_bar = st.progress(0)
-        def worker(username):
-            try:
-                return {
-                    'username': username,
-                    'registration_date': scrape_user_profile(username),
-                    'topics': scrape_user_topics(username)
-                }
-            except Exception as e:
-                st.error(f"Error processing {username}: {str(e)}")
-                return None
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = {executor.submit(worker, username): username for username in usernames}
-            for i, future in enumerate(concurrent.futures.as_completed(futures)):
-                result = future.result()
-                if result:
-                    results.append(result)
-                progress_bar.progress((i + 1) / len(usernames))
     return results
 
-# Main scraping function
+def scrape_all_users(usernames):
+    all_data = []
+    for user in usernames:
+        print(f"Scraping {user}...")
+        user_data = scrape_user_topics(user)
+        all_data.extend(user_data)
+    return pd.DataFrame(all_data)
+
+# Main App Logic
+# -------------------------------------------
 def main():
-    # Sidebar for navigation
     st.sidebar.title("Navigation")
-    page = st.sidebar.radio(
-        "Select Page",
-        ["Scrape Profiles", "View Data", "Analysis", "Visualizations", "Coordination Detection", "Export Results"]
-    )
-    
-    default_usernames = [
-        "elusive001", "botragelad", "holiness2100", "uprightness100", "truthU87",
-        "biodun556", "coronaVirusPro", "NigerianXXX", "Kingsnairaland", "Betscoreodds",
-        "Nancy2020", "Nancy1986", "Writernig", "WritterNg"
-    ]
-    
+    page = st.sidebar.radio("Select Page", ["Scrape Profiles", "View Data", "Export Results"])  # Add other pages as needed
+
     if page == "Scrape Profiles":
-        st.header("Scrape Nairaland User Profiles")
-        input_method = st.radio(
-            "Select Input Method",
-            ["Enter Usernames", "Use Default List"]
-        )
-        usernames = []
-        if input_method == "Enter Usernames":
-            username_input = st.text_area("Enter usernames (one per line)")
-            if username_input:
-                usernames = [name.strip() for name in username_input.split('\n') if name.strip()]
-        elif input_method == "Use Default List":
-            usernames = default_usernames
-            st.write(f"Using {len(usernames)} default usernames")
-        
-        col1, col2 = st.columns(2)
-        with col1:
-            max_workers = st.number_input("Concurrent workers", min_value=1, max_value=10, value=5)
-        with col2:
-            delay = st.number_input("Delay between requests (seconds)", min_value=0.5, max_value=5.0, value=1.0, step=0.5)
-        
-        if st.button("Start Scraping") and usernames:
-            results = scrape_multiple_users(usernames, max_workers, delay)
-            st.success(f"Scraping completed for {len(results)} users")
-            
-            all_topics = []
-            for user in results:
-                for topic in user['topics']:
-                    all_topics.append({
-                        'username': user['username'],
-                        'registration_date': user['registration_date'],
-                        **topic
-                    })
-            df = pd.DataFrame(all_topics)
-            st.session_state['data'] = df
-            
-            topic_counts = [(user['username'], len(user['topics'])) for user in results]
-            topic_counts.sort(key=lambda x: x[1], reverse=True)
-            topic_count_df = pd.DataFrame(topic_counts, columns=["Username", "Topic Count"])
-            st.write("Topics per user:")
-            st.dataframe(topic_count_df)
-    
+        render_scrape_profiles()
     elif page == "View Data":
-        if 'data' not in st.session_state or st.session_state['data'].empty:
-            st.warning("No data available. Please scrape some profiles first.")
-        else:
-            df = st.session_state['data']
-            st.write(f"Total topics: {len(df)}")
-            st.dataframe(df)
-    
+        render_view_data()
     elif page == "Export Results":
-        if 'data' not in st.session_state or st.session_state['data'].empty:
-            st.warning("No data available. Please scrape some profiles first.")
+        render_export_results()
+
+    # User input
+    usernames_input = st.text_area("Enter Nairaland usernames (comma-separated)", "")
+    if usernames_input:
+        usernames = [username.strip() for username in usernames_input.split(",")]
+    else:
+        usernames = default_usernames  # Use default if no input
+
+    if st.button("Scrape Topics"):
+        df = scrape_all_users(usernames)
+        st.write("Scraping complete!")
+        st.write(df.head())  # Display the first few rows of the DataFrame
+
+    if st.button("Export Data"):
+        if 'df' in locals():
+            df.to_csv("nairaland_users_data.csv", index=False)
+            st.write("Data exported successfully!")
         else:
-            df = st.session_state['data']
-            export_format = st.radio(
-                "Export Format",
-                ["CSV", "Excel", "JSON"]
-            )
-            if st.button("Generate Export"):
-                if export_format == "CSV":
-                    csv = df.to_csv(index=False)
-                    st.download_button(
-                        label="Download Data (CSV)",
-                        data=csv,
-                        file_name="nairaland_data.csv",
-                        mime="text/csv"
-                    )
-                elif export_format == "Excel":
-                    output = io.BytesIO()
-                    with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
-                        df.to_excel(writer, sheet_name='Data', index=False)
-                    excel_data = output.getvalue()
-                    st.download_button(
-                        label="Download Data (Excel)",
-                        data=excel_data,
-                        file_name="nairaland_data.xlsx",
-                        mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-                    )
-                elif export_format == "JSON":
-                    json_data = df.to_json(orient="records", indent=4)
-                    st.download_button(
-                        label="Download Data (JSON)",
-                        data=json_data,
-                        file_name="nairaland_data.json",
-                        mime="application/json"
-                    )
+            st.write("No data to export yet.")
 
 if __name__ == "__main__":
     main()
