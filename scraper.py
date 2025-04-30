@@ -154,96 +154,110 @@ def scrape_user_profile(username):
     return None
 
 def scrape_user_topics(username):
-    """Scrape all topics created by the user."""
     topics_data = []
     try:
         url = f"https://www.nairaland.com/{username}"
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            context = browser.new_context()
+            browser = p.chromium.launch(headless=True, args=['--no-sandbox', '--disable-setuid-sandbox'])
+            # Set custom User-Agent
+            context = browser.new_context(
+                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            )
             page = context.new_page()
-            page.goto(url)
-            while True:
-                # Wait for the page to finish loading
-                page.wait_for_selector(".threadTitle", timeout=10000)
-                # Parse the page content
-                soup = BeautifulSoup(page.content(), "html.parser")
-                # Find all topic rows
-                topic_rows = soup.find_all("tr", class_="threadRow")
-                for row in topic_rows:
-                    try:
-                        # Extract topic metadata
-                        topic_title = row.find("a", class_="threadTitle").get_text(strip=True)
-                        topic_url = row.find("a", class_="threadTitle").get("href")
-                        section = row.find("span", class_="section").get_text(strip=True)
-                        views_replies = row.find("span", class_="smallText").get_text(strip=True)
-                        # Add to topics data
-                        topics_data.append({
-                            'topic_title': topic_title,
-                            'topic_url': topic_url,
-                            'section': section,
-                            'views_replies': views_replies
-                        })
-                    except Exception as e:
-                        print(f"Error processing topic: {str(e)}")
-                # Find next page link
-                next_page = page.query_selector("a.next")
-                if not next_page:
-                    print(f"No next page found for {username}")
-                    break
-                page.click("a.next")
-                page.wait_for_selector(".threadTitle", timeout=10000)
-                time.sleep(1)
+            page.goto(url, timeout=15000)
+            # Wait for the page to finish loading
+            page.wait_for_load_state("networkidle")
+            # Wait for the selector to appear
+            page.wait_for_selector(".threadTitle", timeout=10000)
+            # Get the page content
+            html = page.content()
+            soup = BeautifulSoup(html, 'html.parser')
+            # Find all topic rows
+            topic_rows = soup.find_all("tr", class_="threadRow")
+            for topic_row in topic_rows:
+                try:
+                    # Extract topic metadata
+                    topic_title = topic_row.find("a", class_="threadTitle").get_text(strip=True)
+                    topic_url = topic_row.find("a", class_="threadTitle").get("href")
+                    # Scrape topic contents
+                    topic_contents = scrape_topic_contents(topic_url)
+                    # Add to topics data
+                    topics_data.append({
+                        'topic_title': topic_title,
+                        'topic_url': topic_url,
+                        'topic_contents': topic_contents
+                    })
+                except Exception as e:
+                    print(f"Error processing topic: {str(e)}")
             browser.close()
     except Exception as e:
         print(f"Error scraping topics for {username}: {str(e)}")
     return topics_data
 
 def scrape_topic_contents(topic_url):
-    """Scrape all posts within a topic."""
     topic_contents = []
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            context = browser.new_context()
+            browser = p.chromium.launch(headless=True, args=['--no-sandbox', '--disable-setuid-sandbox'])
+            # Set custom User-Agent
+            context = browser.new_context(
+                user_agent='Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+            )
             page = context.new_page()
-            page.goto(topic_url)
-            while True:
-                # Wait for the page to finish loading
+            page.goto(topic_url, timeout=15000)
+            # Wait for the page to finish loading
+            page.wait_for_load_state("networkidle")
+            # Wait for the selector to appear
+            page.wait_for_selector(".messageHeader", timeout=10000)
+            # Get the page content
+            html = page.content()
+            soup = BeautifulSoup(html, 'html.parser')
+            # Find all post rows
+            post_rows = soup.find_all("tr", class_="messageRow")
+            for post_row in post_rows:
+                try:
+                    # Extract post metadata
+                    post_text = post_row.find("div", class_="messageContent").get_text(strip=True)
+                    post_date = post_row.find("span", class_="messageFooter").find("span").get_text(strip=True)
+                    post_time = post_row.find("span", class_="messageFooter").find("span", class_="smallText").get_text(strip=True)
+                    # Add to topic contents
+                    topic_contents.append({
+                        'post_text': post_text,
+                        'post_date': post_date,
+                        'post_time': post_time
+                    })
+                except Exception as e:
+                    print(f"Error processing post: {str(e)}")
+            # Scrape next pages
+            next_page = page.query_selector("a.next")
+            while next_page:
+                page.click("a.next")
+                page.wait_for_load_state("networkidle")
                 page.wait_for_selector(".messageHeader", timeout=10000)
-                # Parse the page content
-                soup = BeautifulSoup(page.content(), "html.parser")
+                # Get the page content
+                html = page.content()
+                soup = BeautifulSoup(html, 'html.parser')
                 # Find all post rows
                 post_rows = soup.find_all("tr", class_="messageRow")
-                for row in post_rows:
+                for post_row in post_rows:
                     try:
                         # Extract post metadata
-                        post_text = row.find("div", class_="messageContent").get_text(strip=True)
-                        post_date = row.find("span", class_="messageFooter").find("span").get_text(strip=True)
-                        post_time = row.find("span", class_="messageFooter").find("span", class_="smallText").get_text(strip=True)
-                        parsed_date, parsed_time, timestamp = parse_date_time(post_date, post_time)
+                        post_text = post_row.find("div", class_="messageContent").get_text(strip=True)
+                        post_date = post_row.find("span", class_="messageFooter").find("span").get_text(strip=True)
+                        post_time = post_row.find("span", class_="messageFooter").find("span", class_="smallText").get_text(strip=True)
                         # Add to topic contents
                         topic_contents.append({
                             'post_text': post_text,
-                            'post_date': parsed_date,
-                            'post_time': parsed_time,
-                            'timestamp': timestamp
+                            'post_date': post_date,
+                            'post_time': post_time
                         })
                     except Exception as e:
                         print(f"Error processing post: {str(e)}")
-                # Find next page link
                 next_page = page.query_selector("a.next")
-                if not next_page:
-                    print(f"No next page found for topic: {topic_url}")
-                    break
-                page.click("a.next")
-                page.wait_for_selector(".messageHeader", timeout=10000)
-                time.sleep(1)
             browser.close()
     except Exception as e:
         print(f"Error scraping topic contents: {str(e)}")
     return topic_contents
-
 def scrape_multiple_users(usernames, max_workers=5, delay=1):
     results = []
     with st.spinner(f"Scraping data for {len(usernames)} users..."):
