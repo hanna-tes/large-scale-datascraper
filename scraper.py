@@ -44,7 +44,7 @@ st.set_page_config(
 st.title("Nairaland User Coordination Analysis Dashboard")
 st.markdown("""
 This dashboard scrapes user profiles from Nairaland and analyzes potential coordination patterns between accounts.
-Upload a list of usernames to analyze posting patterns, content similarity, and potential coordinated behavior.
+Upload a list of usernames to analyze topics created, posting patterns, content similarity, and potential coordinated behavior.
 """)
 
 # Download NLTK resources
@@ -153,11 +153,11 @@ def scrape_user_profile(username):
         print(f"Error fetching profile: {str(e)}")
     return None
 
-def scrape_user_posts(username):
-    posts_data = []
-    registration_date = scrape_user_profile(username)
+def scrape_user_topics(username):
+    """Scrape all topics created by the user."""
+    topics_data = []
     try:
-        url = f"https://www.nairaland.com/{username}/posts"
+        url = f"https://www.nairaland.com/{username}"
         with sync_playwright() as p:
             browser = p.chromium.launch(headless=True)
             context = browser.new_context()
@@ -165,20 +165,65 @@ def scrape_user_posts(username):
             page.goto(url)
             while True:
                 # Wait for the page to finish loading
-                page.wait_for_selector(".messageRow", timeout=10000)
+                page.wait_for_selector(".threadTitle", timeout=10000)
+                # Parse the page content
+                soup = BeautifulSoup(page.content(), "html.parser")
+                # Find all topic rows
+                topic_rows = soup.find_all("tr", class_="threadRow")
+                for row in topic_rows:
+                    try:
+                        # Extract topic metadata
+                        topic_title = row.find("a", class_="threadTitle").get_text(strip=True)
+                        topic_url = row.find("a", class_="threadTitle").get("href")
+                        section = row.find("span", class_="section").get_text(strip=True)
+                        views_replies = row.find("span", class_="smallText").get_text(strip=True)
+                        # Add to topics data
+                        topics_data.append({
+                            'topic_title': topic_title,
+                            'topic_url': topic_url,
+                            'section': section,
+                            'views_replies': views_replies
+                        })
+                    except Exception as e:
+                        print(f"Error processing topic: {str(e)}")
+                # Find next page link
+                next_page = page.query_selector("a.next")
+                if not next_page:
+                    print(f"No next page found for {username}")
+                    break
+                page.click("a.next")
+                page.wait_for_selector(".threadTitle", timeout=10000)
+                time.sleep(1)
+            browser.close()
+    except Exception as e:
+        print(f"Error scraping topics for {username}: {str(e)}")
+    return topics_data
+
+def scrape_topic_contents(topic_url):
+    """Scrape all posts within a topic."""
+    topic_contents = []
+    try:
+        with sync_playwright() as p:
+            browser = p.chromium.launch(headless=True)
+            context = browser.new_context()
+            page = context.new_page()
+            page.goto(topic_url)
+            while True:
+                # Wait for the page to finish loading
+                page.wait_for_selector(".messageHeader", timeout=10000)
                 # Parse the page content
                 soup = BeautifulSoup(page.content(), "html.parser")
                 # Find all post rows
-                rows = soup.find_all("tr", class_="messageRow")
-                for row in rows:
+                post_rows = soup.find_all("tr", class_="messageRow")
+                for row in post_rows:
                     try:
                         # Extract post metadata
                         post_text = row.find("div", class_="messageContent").get_text(strip=True)
                         post_date = row.find("span", class_="messageFooter").find("span").get_text(strip=True)
                         post_time = row.find("span", class_="messageFooter").find("span", class_="smallText").get_text(strip=True)
                         parsed_date, parsed_time, timestamp = parse_date_time(post_date, post_time)
-                        # Add to posts data
-                        posts_data.append({
+                        # Add to topic contents
+                        topic_contents.append({
                             'post_text': post_text,
                             'post_date': parsed_date,
                             'post_time': parsed_time,
@@ -189,30 +234,28 @@ def scrape_user_posts(username):
                 # Find next page link
                 next_page = page.query_selector("a.next")
                 if not next_page:
-                    print(f"No next page found for {username}")
+                    print(f"No next page found for topic: {topic_url}")
                     break
                 page.click("a.next")
-                page.wait_for_selector(".messageRow", timeout=10000)
+                page.wait_for_selector(".messageHeader", timeout=10000)
                 time.sleep(1)
             browser.close()
     except Exception as e:
-        print(f"Error scraping {username}: {str(e)}")
-    print(f"Scraped {len(posts_data)} posts for {username}")
-    return {
-        'username': username,
-        'posts': posts_data,
-        'registration_date': registration_date,
-        'post_count': len(posts_data)
-    }
+        print(f"Error scraping topic contents: {str(e)}")
+    return topic_contents
 
-def scrape_multiple_users(usernames, pages_per_user=10, max_workers=5, delay=1):
+def scrape_multiple_users(usernames, max_workers=5, delay=1):
     results = []
     with st.spinner(f"Scraping data for {len(usernames)} users..."):
         progress_bar = st.progress(0)
         # Use a wrapper to isolate Streamlit context
         def worker(username):
             try:
-                return scrape_user_posts(username)
+                return {
+                    'username': username,
+                    'registration_date': scrape_user_profile(username),
+                    'topics': scrape_user_topics(username)
+                }
             except Exception as e:
                 st.error(f"Error processing {username}: {str(e)}")
                 return None
@@ -224,8 +267,6 @@ def scrape_multiple_users(usernames, pages_per_user=10, max_workers=5, delay=1):
                     results.append(result)
                 progress_bar.progress((i + 1) / len(usernames))
     return results
-
-# Data analysis and visualization functions remain unchanged...
 
 # Main scraping function
 def main():
@@ -263,39 +304,35 @@ def main():
             st.write(f"Using {len(usernames)} default usernames")
         
         # Scraping parameters
-        col1, col2, col3 = st.columns(3)
+        col1, col2 = st.columns(2)
         with col1:
-            pages_per_user = st.number_input("Pages per user", min_value=1, max_value=100, value=50)
-        with col2:
             max_workers = st.number_input("Concurrent workers", min_value=1, max_value=10, value=5)
-        with col3:
+        with col2:
             delay = st.number_input("Delay between requests (seconds)", min_value=0.5, max_value=5.0, value=1.0, step=0.5)
         
         # Start scraping
         if st.button("Start Scraping") and usernames:
-            results = scrape_multiple_users(usernames, pages_per_user, max_workers, delay)
+            results = scrape_multiple_users(usernames, max_workers, delay)
             st.success(f"Scraping completed for {len(results)} users")
-            total_posts = sum(user['post_count'] for user in results)
-            st.write(f"Total posts scraped: {total_posts}")
             
-            # Flatten posts for export
-            all_posts = []
+            # Flatten topics for export
+            all_topics = []
             for user in results:
-                for post in user['posts']:
-                    all_posts.append({
+                for topic in user['topics']:
+                    all_topics.append({
                         'username': user['username'],
                         'registration_date': user['registration_date'],
-                        **post
+                        **topic
                     })
-            df = pd.DataFrame(all_posts)
+            df = pd.DataFrame(all_topics)
             st.session_state['data'] = df
             
-            # Display post counts per user
-            post_counts = [(user['username'], user['post_count']) for user in results]
-            post_counts.sort(key=lambda x: x[1], reverse=True)
-            post_count_df = pd.DataFrame(post_counts, columns=["Username", "Post Count"])
-            st.write("Posts per user:")
-            st.dataframe(post_count_df)
+            # Display topic counts per user
+            topic_counts = [(user['username'], len(user['topics'])) for user in results]
+            topic_counts.sort(key=lambda x: x[1], reverse=True)
+            topic_count_df = pd.DataFrame(topic_counts, columns=["Username", "Topic Count"])
+            st.write("Topics per user:")
+            st.dataframe(topic_count_df)
     
     # View Data page
     elif page == "View Data":
@@ -303,7 +340,7 @@ def main():
             st.warning("No data available. Please scrape some profiles first.")
         else:
             df = st.session_state['data']
-            st.write(f"Total posts: {len(df)}")
+            st.write(f"Total topics: {len(df)}")
             st.dataframe(df)
     
     # Export Results page
