@@ -46,13 +46,62 @@ st.markdown("""
 This dashboard scrapes user profiles from Nairaland and analyzes potential coordination patterns between accounts.
 Upload a list of usernames to analyze topics created, posting patterns, content similarity, and potential coordinated behavior.
 """)
+# Download NLTK resources
+@st.cache_resource
+def download_nltk_resources():
+    nltk.download('punkt')
+    nltk.download('stopwords')
 
-# Default user list
-default_usernames = [
-    "elusive001", "botragelad", "holiness2100", "uprightness100", "truthU87",
-    "biodun556", "coronaVirusPro", "NigerianXXX", "Kingsnairaland", "Betscoreodds",
-    "Nancy2020", "Nancy1986", "Writernig", "WritterNg"
-]
+download_nltk_resources()
+# Initialize database
+def init_db():
+    conn = sqlite3.connect('nairaland_data.db')
+    c = conn.cursor()
+    
+    # Create users table
+    c.execute('''
+    CREATE TABLE IF NOT EXISTS users (
+        username TEXT PRIMARY KEY,
+        profile_url TEXT,
+        registration_date TEXT,
+        last_scrape_date TEXT
+    )
+    ''')
+    
+    # Create posts table
+    c.execute('''
+    CREATE TABLE IF NOT EXISTS posts (
+        post_id TEXT PRIMARY KEY,
+        username TEXT,
+        post_text TEXT,
+        post_date TEXT,
+        post_time TEXT,
+        timestamp INTEGER,
+        section TEXT,
+        topic TEXT,
+        topic_url TEXT,
+        likes INTEGER,
+        shares INTEGER,
+        FOREIGN KEY (username) REFERENCES users(username)
+    )
+    ''')
+    
+    # Add indexes for faster queries
+    c.execute('CREATE INDEX IF NOT EXISTS idx_posts_username ON posts(username)')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_posts_timestamp ON posts(timestamp)')
+    c.execute('CREATE INDEX IF NOT EXISTS idx_posts_section ON posts(section)')
+    
+    conn.commit()
+    return conn
+    # Helper functions for scraping
+def get_headers():
+    return {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1',
+    }
 
 # Clean the text content
 def clean_text(text):
@@ -64,6 +113,32 @@ def clean_text(text):
     text = re.sub(r'\d+', ' ', text)
     text = re.sub(r'\s+', ' ', text)
     return text.strip()
+
+def scrape_user_profile(username):
+    """Scrape registration date from Nairaland profile page"""
+    profile_url = f"https://www.nairaland.com/{username}"
+    
+    # Try up to 3 times to scrape the profile
+    for attempt in range(3):
+        try:
+            response = requests.get(profile_url, headers=get_headers(), timeout=10)
+            if response.status_code == 200:
+                soup = BeautifulSoup(response.text, 'html.parser')
+                
+                # Look for the <tr> and <td> elements containing the registration date
+                registration_row = soup.find('tr', text=lambda x: x and 'Registered' in x)
+                if registration_row:
+                    # Within the <tr>, find the <td> and then the <b> tag for the registration date
+                    td_tag = registration_row.find('td')
+                    if td_tag:
+                        b_tag = td_tag.find('b')
+                        if b_tag:
+                            return b_tag.get_text(strip=True)
+            time.sleep(1)
+        except Exception as e:
+            print(f"Error fetching profile: {str(e)}")
+            continue
+    return None
 
 # Parse content of posts
 def parse_post_content(soup):
@@ -124,15 +199,71 @@ def scrape_user_topics(username):
         print(f"Error scraping topics for {username}: {str(e)}")
     return results
 
-# Scrape all topics for multiple users
-def scrape_all_users(usernames):
-    all_data = []
-    for user in usernames:
-        print(f"Scraping {user}...")
-        user_data = scrape_user_topics(user)
-        all_data.extend(user_data)
-    return pd.DataFrame(all_data)
+def scrape_multiple_users(usernames, pages_per_user=10, max_workers=5, delay=1):
+    """
+    Scrape topics for multiple users concurrently.
+    """
+    results = []
+    with st.spinner(f"Scraping data for {len(usernames)} users..."):
+        progress_bar = st.progress(0)
 
+        def worker(username):
+            try:
+                return {
+                    'username': username,
+                    'registration_date': scrape_user_profile(username),
+                    'topics': scrape_user_topics(username, pages_per_user, delay)
+                }
+            except Exception as e:
+                st.error(f"Error processing {username}: {str(e)}")
+                return None
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = {executor.submit(worker, username): username for username in usernames}
+            for i, future in enumerate(concurrent.futures.as_completed(futures)):
+                result = future.result()
+                if result:
+                    results.append(result)
+                progress_bar.progress((i + 1) / len(usernames))
+    return results
+def save_to_database(data, conn):
+    cursor = conn.cursor()
+    
+    # Current time for last_scrape_date
+    now = datetime.datetime.now().strftime('%Y-%m-%d %H:%M:%S')
+    
+    for user_data in data:
+        username = user_data['username']
+        registration_date = user_data['registration_date']
+        profile_url = f"https://www.nairaland.com/username"
+        
+        # Insert or update user
+        cursor.execute('''
+        INSERT OR REPLACE INTO users (username, profile_url, registration_date, last_scrape_date)
+        VALUES (?, ?, ?, ?)
+        ''', (username, profile_url, registration_date, now))
+        
+        # Insert posts
+        for post in user_data['posts']:
+            cursor.execute('''
+            INSERT OR REPLACE INTO posts 
+            (post_id, username, post_text, post_date, post_time, timestamp, section, topic, topic_url, likes, shares)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ''', (
+                post['post_id'],
+                post['username'],
+                post['post_text'],
+                post['post_date'],
+                post['post_time'],
+                post['timestamp'],
+                post['section'],
+                post['topic'],
+                post['topic_url'],
+                post['likes'],
+                post['shares']
+            ))
+    
+    conn.commit()
 # Analysis functions
 def analyze_posting_frequency(df):
     # Group by username and date, count posts
@@ -659,7 +790,8 @@ def generate_insights(df, freq_stats, content_sim_df, section_overlap_df, topic_
 
 # Main dashboard interface
 def main():
-
+# Initialize database
+    conn = init_db()
     # Sidebar for navigation
     st.sidebar.title("Navigation")
     page = st.sidebar.radio(
