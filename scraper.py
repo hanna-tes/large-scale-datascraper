@@ -659,9 +659,7 @@ def generate_insights(df, freq_stats, content_sim_df, section_overlap_df, topic_
 
 # Main dashboard interface
 def main():
-    # Initialize database
-    conn = init_db()
-    
+
     # Sidebar for navigation
     st.sidebar.title("Navigation")
     page = st.sidebar.radio(
