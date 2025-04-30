@@ -54,6 +54,7 @@ default_usernames = [
     "Nancy2020", "Nancy1986", "Writernig", "WritterNg"
 ]
 
+# Clean the text content
 def clean_text(text):
     if not text:
         return ""
@@ -64,37 +65,22 @@ def clean_text(text):
     text = re.sub(r'\s+', ' ', text)
     return text.strip()
 
+# Parse content of posts
 def parse_post_content(soup):
     content_div = soup.find("div", class_="narrow")
     return clean_text(content_div.get_text(strip=True)) if content_div else ""
 
+# Get topic details from a given topic URL
 def get_topic_details(page, topic_url):
     page.goto(topic_url)
     page.wait_for_load_state("networkidle")
     html = page.content()
     soup = BeautifulSoup(html, 'html.parser')
-
     content = parse_post_content(soup)
-    
-    # Extract all "narrow" divs as replies (original post is the first)
-    reply_divs = soup.find_all("div", class_="narrow")
-    replies = [clean_text(div.get_text(strip=True)) for div in reply_divs[1:]]  # skip original post
+    replies = soup.find_all("div", class_="narrow")
+    return content, len(replies) - 1  # Exclude the original post
 
-    # Try to extract likes and shares from the soup
-    try:
-        likes_tag = soup.find("span", string=re.compile("Like", re.IGNORECASE))
-        likes = int(re.search(r'\d+', likes_tag.text).group()) if likes_tag else 0
-    except:
-        likes = 0
-
-    try:
-        shares_tag = soup.find("span", string=re.compile("Share", re.IGNORECASE))
-        shares = int(re.search(r'\d+', shares_tag.text).group()) if shares_tag else 0
-    except:
-        shares = 0
-
-    return content, len(replies), replies, likes, shares
-
+# Scrape topics for a given user
 def scrape_user_topics(username):
     results = []
     try:
@@ -116,18 +102,14 @@ def scrape_user_topics(username):
                         topic_url = "https://www.nairaland.com" + title_tag.get("href")
                         category = row.find("a", class_="board")
                         category_name = category.get_text(strip=True) if category else "Unknown"
-                        
-                        content, replies_count, replies_content, likes, shares = get_topic_details(page, topic_url)
+                        content, replies = get_topic_details(page, topic_url)
                         results.append({
                             "username": username,
                             "category": category_name,
                             "title": topic_title,
                             "url": topic_url,
                             "content": content,
-                            "replies": replies_count,
-                            "replies_content": replies_content,
-                            "likes": likes,
-                            "shares": shares
+                            "replies": replies
                         })
                     except Exception as e:
                         print(f"Error parsing topic row: {str(e)}")
@@ -142,6 +124,7 @@ def scrape_user_topics(username):
         print(f"Error scraping topics for {username}: {str(e)}")
     return results
 
+# Scrape all topics for multiple users
 def scrape_all_users(usernames):
     all_data = []
     for user in usernames:
@@ -150,37 +133,1058 @@ def scrape_all_users(usernames):
         all_data.extend(user_data)
     return pd.DataFrame(all_data)
 
-# Main App Logic
-# -------------------------------------------
-def main():
-    st.sidebar.title("Navigation")
-    page = st.sidebar.radio("Select Page", ["Scrape Profiles", "View Data", "Export Results"])  # Add other pages as needed
+# Analysis functions
+def analyze_posting_frequency(df):
+    # Group by username and date, count posts
+    freq_df = df.groupby(['username', 'post_date']).size().reset_index(name='post_count')
+    
+    # Get daily average per user
+    avg_posts = freq_df.groupby('username')['post_count'].mean().reset_index()
+    avg_posts.columns = ['username', 'avg_daily_posts']
+    
+    # Get posting days per user
+    days_posted = freq_df.groupby('username').size().reset_index(name='days_posted')
+    
+    # Get total posts per user
+    total_posts = df.groupby('username').size().reset_index(name='total_posts')
+    
+    # Merge all statistics
+    freq_stats = avg_posts.merge(days_posted, on='username').merge(total_posts, on='username')
+    
+    return freq_stats
 
-    if page == "Scrape Profiles":
-        render_scrape_profiles()
-    elif page == "View Data":
-        render_view_data()
-    elif page == "Export Results":
-        render_export_results()
+def analyze_time_patterns(df):
+    # Convert timestamp to datetime
+    df['datetime'] = pd.to_datetime(df['timestamp'], unit='s')
+    
+    # Extract hour and day of week
+    df['hour'] = df['datetime'].dt.hour
+    df['day_of_week'] = df['datetime'].dt.dayofweek
+    
+    # Count posts by hour and username
+    hour_counts = df.groupby(['username', 'hour']).size().reset_index(name='post_count')
+    
+    # Count posts by day of week and username
+    day_counts = df.groupby(['username', 'day_of_week']).size().reset_index(name='post_count')
+    
+    return hour_counts, day_counts
 
-    # User input
-    usernames_input = st.text_area("Enter Nairaland usernames (comma-separated)", "")
-    if usernames_input:
-        usernames = [username.strip() for username in usernames_input.split(",")]
+def analyze_content_similarity(df):
+    # Get unique usernames
+    usernames = df['username'].unique()
+    
+    # Combine all posts for each user
+    user_texts = {}
+    for username in usernames:
+        user_posts = df[df['username'] == username]['post_text'].tolist()
+        user_texts[username] = ' '.join(user_posts)
+    
+    # Create TF-IDF vectors
+    tfidf_vectorizer = TfidfVectorizer(max_features=5000, stop_words='english')
+    tfidf_matrix = tfidf_vectorizer.fit_transform(list(user_texts.values()))
+    
+    # Calculate cosine similarity
+    similarity_matrix = cosine_similarity(tfidf_matrix)
+    
+    # Create DataFrame with similarity scores
+    similarity_df = pd.DataFrame(similarity_matrix, index=usernames, columns=usernames)
+    
+    return similarity_df
+
+def analyze_section_overlap(df):
+    # Get sections per user
+    user_sections = {}
+    for username in df['username'].unique():
+        sections = df[df['username'] == username]['section'].unique().tolist()
+        user_sections[username] = set(sections)
+    
+    # Calculate Jaccard similarity for section overlap
+    usernames = list(user_sections.keys())
+    overlap_matrix = np.zeros((len(usernames), len(usernames)))
+    
+    for i, user1 in enumerate(usernames):
+        for j, user2 in enumerate(usernames):
+            if i == j:
+                overlap_matrix[i, j] = 1.0
+            else:
+                # Jaccard similarity: intersection / union
+                sections1 = user_sections[user1]
+                sections2 = user_sections[user2]
+                intersection = len(sections1.intersection(sections2))
+                union = len(sections1.union(sections2))
+                overlap_matrix[i, j] = intersection / union if union > 0 else 0
+    
+    # Create DataFrame
+    overlap_df = pd.DataFrame(overlap_matrix, index=usernames, columns=usernames)
+    
+    return overlap_df
+
+def analyze_topic_overlap(df):
+    # Get topics per user
+    user_topics = {}
+    for username in df['username'].unique():
+        topics = df[df['username'] == username]['topic'].unique().tolist()
+        user_topics[username] = set(topics)
+    
+    # Calculate Jaccard similarity for topic overlap
+    usernames = list(user_topics.keys())
+    overlap_matrix = np.zeros((len(usernames), len(usernames)))
+    
+    for i, user1 in enumerate(usernames):
+        for j, user2 in enumerate(usernames):
+            if i == j:
+                overlap_matrix[i, j] = 1.0
+            else:
+                # Jaccard similarity: intersection / union
+                topics1 = user_topics[user1]
+                topics2 = user_topics[user2]
+                intersection = len(topics1.intersection(topics2))
+                union = len(topics1.union(topics2))
+                overlap_matrix[i, j] = intersection / union if union > 0 else 0
+    
+    # Create DataFrame
+    overlap_df = pd.DataFrame(overlap_matrix, index=usernames, columns=usernames)
+    
+    return overlap_df
+
+def detect_temporal_patterns(df):
+    # Define a window size (e.g., 10 minutes) to identify posts in close time proximity
+    window_size = 10 * 60  # 10 minutes in seconds
+    
+    # Sort by timestamp
+    df = df.sort_values('timestamp')
+    
+    # Create a dictionary to store coordinated posts
+    coordinated_posts = {}
+    
+    # Get unique topics
+    topics = df['topic'].unique()
+    
+    for topic in topics:
+        # Get posts for this topic
+        topic_posts = df[df['topic'] == topic]
+        
+        # Skip topics with only one post
+        if len(topic_posts) <= 1:
+            continue
+        
+        # Group posts by users in time windows
+        for i, row in topic_posts.iterrows():
+            timestamp = row['timestamp']
+            username = row['username']
+            
+            # Find posts within the time window
+            window_posts = topic_posts[
+                (topic_posts['timestamp'] >= timestamp - window_size) & 
+                (topic_posts['timestamp'] <= timestamp + window_size)
+            ]
+            
+            # If multiple users posted in this window
+            if len(window_posts['username'].unique()) > 1:
+                # Add to coordinated posts
+                window_key = f"{topic}_{timestamp}"
+                if window_key not in coordinated_posts:
+                    coordinated_posts[window_key] = {
+                        'topic': topic,
+                        'timestamp': timestamp,
+                        'users': window_posts['username'].unique().tolist(),
+                        'post_count': len(window_posts)
+                    }
+    
+    # Convert to DataFrame
+    coord_df = pd.DataFrame(list(coordinated_posts.values()))
+    
+    if not coord_df.empty:
+        # Calculate coordination strength between user pairs
+        user_pairs = []
+        
+        for _, row in coord_df.iterrows():
+            users = row['users']
+            for i in range(len(users)):
+                for j in range(i+1, len(users)):
+                    user_pairs.append((users[i], users[j]))
+        
+        # Count occurrences of each user pair
+        pair_counts = pd.Series(user_pairs).value_counts().reset_index()
+        pair_counts.columns = ['user_pair', 'coordination_strength']
+        
+        # Extract user1 and user2 from the tuple
+        pair_counts[['user1', 'user2']] = pd.DataFrame(pair_counts['user_pair'].tolist(), index=pair_counts.index)
+        pair_counts = pair_counts.drop('user_pair', axis=1)
+        
+        return coord_df, pair_counts
     else:
-        usernames = default_usernames  # Use default if no input
+        return pd.DataFrame(), pd.DataFrame()
 
-    if st.button("Scrape Topics"):
-        df = scrape_all_users(usernames)
-        st.write("Scraping complete!")
-        st.write(df.head())  # Display the first few rows of the DataFrame
+def identify_coordination_patterns(df, content_sim_df, section_overlap_df, topic_overlap_df, coord_pairs):
+    # Create an empty DataFrame for the final coordination scores
+    usernames = df['username'].unique()
+    coord_scores = pd.DataFrame(0, index=usernames, columns=usernames)
+    
+    # If we have temporal coordination data
+    if not coord_pairs.empty:
+        # Add temporal coordination scores
+        for _, row in coord_pairs.iterrows():
+            user1, user2 = row['user1'], row['user2']
+            strength = row['coordination_strength']
+            coord_scores.loc[user1, user2] += strength
+            coord_scores.loc[user2, user1] += strength
+    
+    # Add content similarity (scaled)
+    for user1 in usernames:
+        for user2 in usernames:
+            if user1 != user2:
+                # Content similarity contributes 0-5 to the score
+                content_sim = content_sim_df.loc[user1, user2] * 5
+                coord_scores.loc[user1, user2] += content_sim
+    
+    # Add section overlap (scaled)
+    for user1 in usernames:
+        for user2 in usernames:
+            if user1 != user2:
+                # Section overlap contributes 0-3 to the score
+                section_sim = section_overlap_df.loc[user1, user2] * 3
+                coord_scores.loc[user1, user2] += section_sim
+    
+    # Add topic overlap (scaled)
+    for user1 in usernames:
+        for user2 in usernames:
+            if user1 != user2:
+                # Topic overlap contributes 0-4 to the score
+                topic_sim = topic_overlap_df.loc[user1, user2] * 4
+                coord_scores.loc[user1, user2] += topic_sim
+    
+    return coord_scores
 
-    if st.button("Export Data"):
-        if 'df' in locals():
-            df.to_csv("nairaland_users_data.csv", index=False)
-            st.write("Data exported successfully!")
+def create_network_graph(coordination_scores, threshold=5):
+    # Create a networkx graph
+    G = nx.Graph()
+    
+    # Add nodes (users)
+    for user in coordination_scores.index:
+        G.add_node(user)
+    
+    # Add edges with weights based on coordination scores
+    for user1 in coordination_scores.index:
+        for user2 in coordination_scores.columns:
+            if user1 != user2:
+                score = coordination_scores.loc[user1, user2]
+                if score > threshold:
+                    G.add_edge(user1, user2, weight=score)
+    
+    return G
+
+# Visualization functions
+def plot_posting_frequency(freq_stats):
+    fig = px.bar(
+        freq_stats.sort_values('total_posts', ascending=False),
+        x='username',
+        y='total_posts',
+        title='Total Posts per User',
+        color='avg_daily_posts',
+        labels={'avg_daily_posts': 'Avg. Daily Posts', 'username': 'Username', 'total_posts': 'Total Posts'},
+        height=500
+    )
+    return fig
+
+def plot_hourly_patterns(hour_counts):
+    fig = px.line(
+        hour_counts,
+        x='hour',
+        y='post_count',
+        color='username',
+        title='Posting Activity by Hour of Day',
+        labels={'hour': 'Hour of Day (24h)', 'post_count': 'Number of Posts', 'username': 'Username'},
+        height=500
+    )
+    fig.update_layout(xaxis=dict(tickmode='linear', tick0=0, dtick=1))
+    return fig
+
+def plot_daily_patterns(day_counts):
+    # Map day of week numbers to names
+    day_map = {0: 'Monday', 1: 'Tuesday', 2: 'Wednesday', 3: 'Thursday', 
+               4: 'Friday', 5: 'Saturday', 6: 'Sunday'}
+    day_counts['day_name'] = day_counts['day_of_week'].map(day_map)
+    
+    fig = px.bar(
+        day_counts,
+        x='day_name',
+        y='post_count',
+        color='username',
+        title='Posting Activity by Day of Week',
+        labels={'day_name': 'Day of Week', 'post_count': 'Number of Posts', 'username': 'Username'},
+        category_orders={"day_name": ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']},
+        height=500
+    )
+    return fig
+
+def plot_content_similarity_heatmap(similarity_df):
+    fig = px.imshow(
+        similarity_df,
+        title='Content Similarity Between Users',
+        labels=dict(x="User", y="User", color="Similarity"),
+        color_continuous_scale='Viridis',
+        height=600
+    )
+    fig.update_layout(
+        xaxis=dict(tickangle=45),
+        yaxis=dict(tickangle=0)
+    )
+    return fig
+
+def plot_section_overlap_heatmap(overlap_df):
+    fig = px.imshow(
+        overlap_df,
+        title='Section Overlap Between Users',
+        labels=dict(x="User", y="User", color="Overlap Score"),
+        color_continuous_scale='Reds',
+        height=600
+    )
+    fig.update_layout(
+        xaxis=dict(tickangle=45),
+        yaxis=dict(tickangle=0)
+    )
+    return fig
+
+def plot_topic_overlap_heatmap(overlap_df):
+    fig = px.imshow(
+        overlap_df,
+        title='Topic Overlap Between Users',
+        labels=dict(x="User", y="User", color="Overlap Score"),
+        color_continuous_scale='Blues',
+        height=600
+    )
+    fig.update_layout(
+        xaxis=dict(tickangle=45),
+        yaxis=dict(tickangle=0)
+    )
+    return fig
+
+def plot_coordination_network(G):
+    # Get positions for nodes
+    pos = nx.spring_layout(G, seed=42)
+    
+    # Get node attributes
+    node_sizes = [3000] * len(G.nodes())
+    
+    # Get edge attributes
+    edge_weights = [G[u][v]['weight'] for u, v in G.edges()]
+    edge_widths = [w/2 for w in edge_weights]
+    
+    # Create edge trace
+    edge_trace = []
+    for u, v, weight in G.edges(data='weight'):
+        x0, y0 = pos[u]
+        x1, y1 = pos[v]
+        
+        # Scale the width based on weight
+        width = weight / 2
+        
+        edge_trace.append(
+            go.Scatter(
+                x=[x0, x1, None],
+                y=[y0, y1, None],
+                line=dict(width=width, color='rgba(50, 50, 50, 0.5)'),
+                hoverinfo='none',
+                mode='lines'
+            )
+        )
+    
+    # Create node trace
+    node_trace = go.Scatter(
+        x=[pos[node][0] for node in G.nodes()],
+        y=[pos[node][1] for node in G.nodes()],
+        text=list(G.nodes()),
+        mode='markers+text',
+        textposition="top center",
+        marker=dict(
+            showscale=True,
+            colorscale='YlGnBu',
+            size=15,
+            line_width=2,
+            color=list(range(len(G.nodes()))),
+            colorbar=dict(
+                thickness=15,
+                title='Node ID',
+                xanchor='left'
+            )
+        )
+    )
+    
+    # Create figure
+    fig = go.Figure(data=edge_trace + [node_trace],
+                 layout=go.Layout(
+                    title='User Coordination Network',
+                    showlegend=False,
+                    hovermode='closest',
+                    margin=dict(b=20, l=5, r=5, t=40),
+                    xaxis=dict(showgrid=False, zeroline=False, showticklabels=False),
+                    yaxis=dict(showgrid=False, zeroline=False, showticklabels=False)
+                ))
+    
+    return fig
+
+def plot_timeline(df):
+    # Create a copy to avoid modifying the original dataframe
+    df_sorted = df.copy()
+    
+    # Convert timestamp to datetime for better display
+    df_sorted['datetime'] = pd.to_datetime(df_sorted['timestamp'], unit='s')
+    
+    # Sort by timestamp
+    df_sorted = df_sorted.sort_values('datetime')
+    
+    # Create a figure
+    fig = px.scatter(
+        df_sorted,
+        x='datetime',  # Use datetime column instead of timestamp
+        y='username',
+        color='section',
+        hover_data=['post_date', 'post_time', 'topic'],
+        title='Timeline of Posts',
+        labels={'datetime': 'Date & Time', 'username': 'User', 'section': 'Section'},
+        height=600
+    )
+    
+    # Format the x-axis to show readable date and time
+    fig.update_xaxes(
+        tickformat='%Y-%m-%d %H:%M',
+        tickangle=45
+    )
+    
+    return fig
+
+
+def plot_user_section_distribution(df):
+    # Count posts by section and user
+    section_counts = df.groupby(['username', 'section']).size().reset_index(name='post_count')
+    
+    # Create figure
+    fig = px.bar(
+        section_counts,
+        x='username',
+        y='post_count',
+        color='section',
+        title='Distribution of Posts by Section',
+        labels={'post_count': 'Number of Posts', 'username': 'User', 'section': 'Section'},
+        height=500
+    )
+    
+    return fig
+
+def find_account_clusters(coord_scores, threshold=5):
+    # Create adjacency matrix (1 if coordination score > threshold, 0 otherwise)
+    adj_matrix = (coord_scores > threshold).astype(int)
+    
+    # Convert to networkx graph
+    G = nx.from_pandas_adjacency(adj_matrix)
+    
+    # Find connected components (clusters)
+    clusters = list(nx.connected_components(G))
+    
+    # Format results
+    cluster_results = []
+    for i, cluster in enumerate(clusters):
+        if len(cluster) > 1:  # Only include clusters with more than one user
+            cluster_results.append({
+                'cluster_id': i + 1,
+                'members': list(cluster),
+                'size': len(cluster)
+            })
+    
+    return pd.DataFrame(cluster_results)
+
+def generate_insights(df, freq_stats, content_sim_df, section_overlap_df, topic_overlap_df, coord_df, clusters_df):
+    insights = []
+    
+    # Insight 1: Users with unusually high posting frequency
+    avg_posts = freq_stats['avg_daily_posts'].mean()
+    high_posters = freq_stats[freq_stats['avg_daily_posts'] > avg_posts * 1.5]
+    if not high_posters.empty:
+        insight_text = f"**High Posting Activity:** {len(high_posters)} users have posting frequencies well above average: "
+        insight_text += ", ".join(high_posters['username'].tolist())
+        insights.append(insight_text)
+    
+    # Insight 2: Highly similar content between users
+    high_sim_pairs = []
+    for user1 in content_sim_df.index:
+        for user2 in content_sim_df.columns:
+            if user1 < user2:  # Avoid duplicates
+                sim_score = content_sim_df.loc[user1, user2]
+                if sim_score > 0.7:  # Threshold for high similarity
+                    high_sim_pairs.append((user1, user2, sim_score))
+    
+    if high_sim_pairs:
+        high_sim_pairs.sort(key=lambda x: x[2], reverse=True)
+        insight_text = f"**Content Similarity:** Found {len(high_sim_pairs)} user pairs with unusually similar content. "
+        insight_text += f"Top pair: {high_sim_pairs[0][0]} and {high_sim_pairs[0][1]} (similarity: {high_sim_pairs[0][2]:.2f})"
+        insights.append(insight_text)
+    
+    # Insight 3: Temporal coordination
+    if not coord_df.empty:
+        insight_text = f"**Temporal Coordination:** Detected {len(coord_df)} instances where multiple users posted on the same topics within close time proximity."
+        insights.append(insight_text)
+    
+    # Insight 4: Clusters of coordinated accounts
+    if not clusters_df.empty:
+        largest_cluster = clusters_df.sort_values('size', ascending=False).iloc[0]
+        insight_text = f"**Account Clusters:** Identified {len(clusters_df)} clusters of potentially coordinated accounts. "
+        insight_text += f"Largest cluster has {largest_cluster['size']} members: {', '.join(largest_cluster['members'])}"
+        insights.append(insight_text)
+    
+    # Insight 5: Registration patterns
+    reg_dates = []
+    for username in df['username'].unique():
+        reg_date_str = df[df['username'] == username]['registration_date'].iloc[0] if not df[df['username'] == username]['registration_date'].empty else None
+        if reg_date_str:
+            try:
+                reg_date = pd.to_datetime(reg_date_str)
+                reg_dates.append((username, reg_date))
+            except:
+                pass
+    
+    if len(reg_dates) > 1:
+        reg_dates.sort(key=lambda x: x[1])
+        date_diffs = []
+        for i in range(1, len(reg_dates)):
+            diff_days = (reg_dates[i][1] - reg_dates[i-1][1]).days
+            if diff_days < 7:  # Accounts registered within a week
+                date_diffs.append((reg_dates[i-1][0], reg_dates[i][0], diff_days))
+        
+        if date_diffs:
+            insight_text = f"**Registration Patterns:** Found {len(date_diffs)} instances where accounts were registered within days of each other."
+            insights.append(insight_text)
+    
+    return insights
+
+# Main dashboard interface
+def main():
+    # Initialize database
+    conn = init_db()
+    
+    # Sidebar for navigation
+    st.sidebar.title("Navigation")
+    page = st.sidebar.radio(
+        "Select Page",
+        ["Scrape Profiles", "View Data", "Analysis", "Visualizations", "Coordination Detection", "Export Results"]
+    )
+    
+    # List of usernames to analyze (for demo purposes)
+    default_usernames = [
+        "elusive001", "botragelad", "holiness2100", "uprightness100", "truthU87",
+        "biodun556", "coronaVirusPro", "NigerianXXX", "Kingsnairaland", "Betscoreodds",
+        "Nancy2020", "Nancy1986", "Writernig", "WritterNg", "WriiterNg", "WrriterNg",
+        "WriteerNig", "WriterrNig", "WritterNig", "WriiterNig", "WrriterNig", "WriterNigg",
+        "WriterNiiig", "WriterNiig", "Ken6488", "Dalil8", "Slavaukraini", "Redscorpion", "Nigeriazoo"
+    ]
+    
+    # Scrape Profiles page
+    if page == "Scrape Profiles":
+        st.header("Scrape Nairaland User Profiles")
+        
+        # Input method selection
+        input_method = st.radio(
+            "Select Input Method",
+            ["Enter Usernames", "Upload File", "Use Default List"]
+        )
+        
+        usernames = []
+        
+        if input_method == "Enter Usernames":
+            username_input = st.text_area("Enter usernames (one per line)")
+            if username_input:
+                usernames = [name.strip() for name in username_input.split('\n') if name.strip()]
+                
+        elif input_method == "Upload File":
+            uploaded_file = st.file_uploader("Upload a file with usernames (one per line)", type=["txt", "csv"])
+            if uploaded_file:
+                content = uploaded_file.read().decode("utf-8")
+                usernames = [name.strip() for name in content.split('\n') if name.strip()]
+                
+        elif input_method == "Use Default List":
+            usernames = default_usernames
+            st.write(f"Using {len(usernames)} default usernames")
+        
+        # Scraping parameters
+        col1, col2, col3 = st.columns(3)
+        with col1:
+            pages_per_user = st.number_input("Pages per user", min_value=1, max_value=50, value=10)
+        with col2:
+            max_workers = st.number_input("Concurrent workers", min_value=1, max_value=10, value=5)
+        with col3:
+            delay = st.number_input("Delay between requests (seconds)", min_value=0.5, max_value=5.0, value=1.0, step=0.5)
+        
+        # Start scraping
+        if st.button("Start Scraping") and usernames:
+            # Perform scraping
+            results = scrape_multiple_users(usernames, pages_per_user, max_workers, delay)
+            
+            # Save to database
+            save_to_database(results, conn)
+            
+            # Display summary
+            st.success(f"Scraping completed for {len(results)} users")
+            
+            # Show summary statistics
+            total_posts = sum(user['post_count'] for user in results)
+            st.write(f"Total posts scraped: {total_posts}")
+            
+            # Display post counts per user
+            post_counts = [(user['username'], user['post_count']) for user in results]
+            post_counts.sort(key=lambda x: x[1], reverse=True)
+            
+            post_count_df = pd.DataFrame(post_counts, columns=["Username", "Post Count"])
+            st.write("Posts per user:")
+            st.dataframe(post_count_df)
+    
+    # View Data page
+    elif page == "View Data":
+        st.header("View Scraped Data")
+        
+        # Query database for users
+        cursor = conn.cursor()
+        cursor.execute("SELECT username, registration_date FROM users ORDER BY username")
+        users = cursor.fetchall()
+        
+        if not users:
+            st.warning("No data available. Please scrape some profiles first.")
         else:
-            st.write("No data to export yet.")
+            # Create user dataframe
+            user_df = pd.DataFrame(users, columns=["Username", "Registration Date"])
+            st.write(f"Total users: {len(user_df)}")
+            st.dataframe(user_df)
+            
+            # Select user to view posts
+            selected_user = st.selectbox("Select a user to view posts", user_df["Username"].tolist())
+            
+            if selected_user:
+                # Query posts for selected user
+                cursor.execute("""
+                SELECT post_date, post_time, section, topic, post_text 
+                FROM posts 
+                WHERE username = ? 
+                ORDER BY timestamp DESC
+                """, (selected_user,))
+                
+                posts = cursor.fetchall()
+                
+                if posts:
+                    # Create posts dataframe
+                    posts_df = pd.DataFrame(posts, columns=["Date", "Time", "Section", "Topic", "Content"])
+                    st.write(f"Total posts for {selected_user}: {len(posts_df)}")
+                    st.dataframe(posts_df)
+                else:
+                    st.info(f"No posts found for {selected_user}")
+    
+    # Analysis page
+    elif page == "Analysis":
+        st.header("Data Analysis")
+        
+        # Load data from database
+        cursor = conn.cursor()
+        
+        # Get list of users
+        cursor.execute("SELECT username FROM users ORDER BY username")
+        user_records = cursor.fetchall()
+        
+        if not user_records:
+            st.warning("No data available. Please scrape some profiles first.")
+        else:
+            user_list = [user[0] for user in user_records]
+            
+            # Allow user to select which users to analyze
+            selected_users = st.multiselect(
+                "Select users to analyze",
+                options=user_list,
+                default=user_list[:min(10, len(user_list))]
+            )
+            
+            if selected_users:
+                # Query posts for selected users
+                placeholders = ','.join(['?'] * len(selected_users))
+                cursor.execute(f"""
+                SELECT p.username, p.post_id, p.post_text, p.post_date, p.post_time, 
+                       p.timestamp, p.section, p.topic, p.likes, p.shares, 
+                       u.registration_date
+                FROM posts p
+                JOIN users u ON p.username = u.username
+                WHERE p.username IN ({placeholders})
+                """, selected_users)
+                
+                records = cursor.fetchall()
+                
+                if records:
+                    # Create dataframe
+                    df = pd.DataFrame(records, columns=[
+                        'username', 'post_id', 'post_text', 'post_date', 'post_time',
+                        'timestamp', 'section', 'topic', 'likes', 'shares', 'registration_date'
+                    ])
+                    
+                    st.write(f"Analyzing {len(df)} posts from {len(selected_users)} users")
+                    
+                    # Basic statistics
+                    st.subheader("Basic Statistics")
+                    
+                    # Posting frequency analysis
+                    freq_stats = analyze_posting_frequency(df)
+                    st.write("Posting Frequency:")
+                    st.dataframe(freq_stats)
+                    
+                    # Time patterns analysis
+                    hour_counts, day_counts = analyze_time_patterns(df)
+                    
+                    # Content analysis
+                    st.subheader("Content Analysis")
+                    
+                    # Get most active sections
+                    section_counts = df.groupby('section').size().reset_index(name='count')
+                    section_counts = section_counts.sort_values('count', ascending=False)
+                    
+                    st.write("Most Active Sections:")
+                    st.dataframe(section_counts.head(10))
+                    
+                    # Get most active topics
+                    topic_counts = df.groupby('topic').size().reset_index(name='count')
+                    topic_counts = topic_counts.sort_values('count', ascending=False)
+                    
+                    st.write("Most Active Topics:")
+                    st.dataframe(topic_counts.head(10))
+                    
+                    # Temporal analysis
+                    st.subheader("Temporal Analysis")
+                    
+                    # Calculate post intervals for each user
+                    user_intervals = []
+                    for username in selected_users:
+                        user_posts = df[df['username'] == username].sort_values('timestamp')
+                        if len(user_posts) > 1:
+                            timestamps = user_posts['timestamp'].values
+                            intervals = np.diff(timestamps)
+                            avg_interval = np.mean(intervals) / 60  # Convert to minutes
+                            user_intervals.append((username, avg_interval))
+                    
+                    if user_intervals:
+                        intervals_df = pd.DataFrame(user_intervals, columns=['Username', 'Avg Interval (minutes)'])
+                        st.write("Average Time Between Posts:")
+                        st.dataframe(intervals_df)
+                else:
+                    st.warning("No posts found for the selected users")
+    
+    # Visualizations page
+    elif page == "Visualizations":
+        st.header("Data Visualizations")
+        
+        # Load data from database
+        cursor = conn.cursor()
+        
+        # Get list of users
+        cursor.execute("SELECT username FROM users ORDER BY username")
+        user_records = cursor.fetchall()
+        
+        if not user_records:
+            st.warning("No data available. Please scrape some profiles first.")
+        else:
+            user_list = [user[0] for user in user_records]
+            
+            # Allow user to select which users to visualize
+            selected_users = st.multiselect(
+                "Select users to visualize",
+                options=user_list,
+                default=user_list[:min(10, len(user_list))]
+            )
+            
+            if selected_users:
+                # Query posts for selected users
+                placeholders = ','.join(['?'] * len(selected_users))
+                cursor.execute(f"""
+                SELECT p.username, p.post_id, p.post_text, p.post_date, p.post_time, 
+                       p.timestamp, p.section, p.topic, p.likes, p.shares, 
+                       u.registration_date
+                FROM posts p
+                JOIN users u ON p.username = u.username
+                WHERE p.username IN ({placeholders})
+                """, selected_users)
+                
+                records = cursor.fetchall()
+                
+                if records:
+                    # Create dataframe
+                    df = pd.DataFrame(records, columns=[
+                        'username', 'post_id', 'post_text', 'post_date', 'post_time',
+                        'timestamp', 'section', 'topic', 'likes', 'shares', 'registration_date'
+                    ])
+                    
+                    # Posting frequency analysis
+                    freq_stats = analyze_posting_frequency(df)
+                    
+                    # Time patterns analysis
+                    hour_counts, day_counts = analyze_time_patterns(df)
+                    
+                    # Visualization selection
+                    viz_type = st.selectbox(
+                        "Select Visualization",
+                        ["Posting Frequency", "Hourly Activity", "Daily Activity",
+                         "Timeline", "Section Distribution"]
+                    )
+                    
+                    if viz_type == "Posting Frequency":
+                        fig = plot_posting_frequency(freq_stats)
+                        st.plotly_chart(fig, use_container_width=True)
+                        
+                    elif viz_type == "Hourly Activity":
+                        fig = plot_hourly_patterns(hour_counts)
+                        st.plotly_chart(fig, use_container_width=True)
+                        
+                    elif viz_type == "Daily Activity":
+                        fig = plot_daily_patterns(day_counts)
+                        st.plotly_chart(fig, use_container_width=True)
+                        
+                    elif viz_type == "Timeline":
+                        fig = plot_timeline(df)
+                        st.plotly_chart(fig, use_container_width=True)
+                        
+                    elif viz_type == "Section Distribution":
+                        fig = plot_user_section_distribution(df)
+                        st.plotly_chart(fig, use_container_width=True)
+                else:
+                    st.warning("No posts found for the selected users")
+    
+    # Coordination Detection page
+    elif page == "Coordination Detection":
+        st.header("Coordination Pattern Detection")
+        
+        # Load data from database
+        cursor = conn.cursor()
+        
+        # Get list of users
+        cursor.execute("SELECT username FROM users ORDER BY username")
+        user_records = cursor.fetchall()
+        
+        if not user_records:
+            st.warning("No data available. Please scrape some profiles first.")
+        else:
+            user_list = [user[0] for user in user_records]
+            
+            # Allow user to select which users to analyze
+            selected_users = st.multiselect(
+                "Select users to analyze for coordination",
+                options=user_list,
+                default=user_list[:min(15, len(user_list))]
+            )
+            
+            if selected_users:
+                # Set threshold for coordination detection
+                threshold = st.slider(
+                    "Coordination Score Threshold",
+                    min_value=1.0,
+                    max_value=10.0,
+                    value=5.0,
+                    step=0.5,
+                    help="Minimum score to consider two users as potentially coordinated"
+                )
+                
+                if st.button("Detect Coordination Patterns"):
+                    with st.spinner("Analyzing coordination patterns..."):
+                        # Query posts for selected users
+                        placeholders = ','.join(['?'] * len(selected_users))
+                        cursor.execute(f"""
+                        SELECT p.username, p.post_id, p.post_text, p.post_date, p.post_time, 
+                               p.timestamp, p.section, p.topic, p.likes, p.shares, 
+                               u.registration_date
+                        FROM posts p
+                        JOIN users u ON p.username = u.username
+                        WHERE p.username IN ({placeholders})
+                        """, selected_users)
+                        
+                        records = cursor.fetchall()
+                        
+                        if records:
+                            # Create dataframe
+                            df = pd.DataFrame(records, columns=[
+                                'username', 'post_id', 'post_text', 'post_date', 'post_time',
+                                'timestamp', 'section', 'topic', 'likes', 'shares', 'registration_date'
+                            ])
+                            
+                            # Perform coordination analysis
+                            
+                            # 1. Content similarity
+                            content_sim_df = analyze_content_similarity(df)
+                            
+                            # 2. Section overlap
+                            section_overlap_df = analyze_section_overlap(df)
+                            
+                            # 3. Topic overlap
+                            topic_overlap_df = analyze_topic_overlap(df)
+                            
+                            # 4. Temporal patterns
+                            coord_df, coord_pairs = detect_temporal_patterns(df)
+                            
+                            # 5. Identify coordination patterns
+                            coord_scores = identify_coordination_patterns(
+                                df, content_sim_df, section_overlap_df, topic_overlap_df, coord_pairs
+                            )
+                            
+                            # 6. Create network graph
+                            G = create_network_graph(coord_scores, threshold=threshold)
+                            
+                            # 7. Find account clusters
+                            clusters_df = find_account_clusters(coord_scores, threshold=threshold)
+                            
+                            # Display results
+                            
+                            # Show coordination scores
+                            st.subheader("Coordination Scores")
+                            st.dataframe(coord_scores)
+                            
+                            # Show content similarity
+                            st.subheader("Content Similarity")
+                            fig = plot_content_similarity_heatmap(content_sim_df)
+                            st.plotly_chart(fig, use_container_width=True)
+                            
+                            # Show topic overlap
+                            st.subheader("Topic Overlap")
+                            fig = plot_topic_overlap_heatmap(topic_overlap_df)
+                            st.plotly_chart(fig, use_container_width=True)
+                            
+                            # Show network visualization
+                            st.subheader("Coordination Network")
+                            fig = plot_coordination_network(G)
+                            st.plotly_chart(fig, use_container_width=True)
+                            
+                            # Show account clusters
+                            st.subheader("Account Clusters")
+                            if not clusters_df.empty:
+                                st.dataframe(clusters_df)
+                                
+                                # Display members of each cluster
+                                for i, row in clusters_df.iterrows():
+                                    st.write(f"Cluster {row['cluster_id']} ({row['size']} members):")
+                                    st.write(", ".join(row['members']))
+                            else:
+                                st.info("No significant clusters detected with the current threshold")
+                            
+                            # Generate insights
+                            st.subheader("Key Insights")
+                            insights = generate_insights(
+                                df, analyze_posting_frequency(df), 
+                                content_sim_df, section_overlap_df, topic_overlap_df, 
+                                coord_df, clusters_df
+                            )
+                            
+                            for insight in insights:
+                                st.markdown(insight)
+                        else:
+                            st.warning("No posts found for the selected users")
+    
+    # Export Results page
+    elif page == "Export Results":
+        st.header("Export Analysis Results")
+        
+        # Query database for users
+        cursor = conn.cursor()
+        cursor.execute("SELECT username FROM users ORDER BY username")
+        users = cursor.fetchall()
+        
+        if not users:
+            st.warning("No data available. Please scrape some profiles first.")
+        else:
+            # Create user list
+            user_list = [user[0] for user in users]
+            
+            # Select users to export
+            selected_users = st.multiselect(
+                "Select users to include in export",
+                options=user_list,
+                default=user_list
+            )
+            
+            if selected_users:
+                # Export options
+                export_format = st.radio(
+                    "Export Format",
+                    ["CSV", "Excel", "JSON"]
+                )
+                
+                if st.button("Generate Export"):
+                    with st.spinner("Preparing export..."):
+                        # Query data for selected users
+                        placeholders = ','.join(['?'] * len(selected_users))
+                        
+                        # Get user data
+                        cursor.execute(f"""
+                        SELECT * FROM users
+                        WHERE username IN ({placeholders})
+                        """, selected_users)
+                        
+                        user_records = cursor.fetchall()
+                        user_df = pd.DataFrame(user_records, columns=[
+                            'username', 'profile_url', 'registration_date', 'last_scrape_date'
+                        ])
+                        
+                        # Get post data
+                        cursor.execute(f"""
+                        SELECT * FROM posts
+                        WHERE username IN ({placeholders})
+                        """, selected_users)
+                        
+                        post_records = cursor.fetchall()
+                        post_df = pd.DataFrame(post_records, columns=[
+                            'post_id', 'username', 'post_text', 'post_date', 'post_time',
+                            'timestamp', 'section', 'topic', 'topic_url', 'likes', 'shares'
+                        ])
+                        
+                        # Create export
+                        if export_format == "CSV":
+                            user_csv = user_df.to_csv(index=False)
+                            post_csv = post_df.to_csv(index=False)
+                            
+                            st.download_button(
+                                label="Download User Data (CSV)",
+                                data=user_csv,
+                                file_name="nairaland_users.csv",
+                                mime="text/csv"
+                            )
+                            
+                            st.download_button(
+                                label="Download Post Data (CSV)",
+                                data=post_csv,
+                                file_name="nairaland_posts.csv",
+                                mime="text/csv"
+                            )
+                            
+                        elif export_format == "Excel":
+                            # Create Excel file in memory
+                            output = io.BytesIO()
+                            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                                user_df.to_excel(writer, sheet_name='Users', index=False)
+                                post_df.to_excel(writer, sheet_name='Posts', index=False)
+                            
+                            excel_data = output.getvalue()
+                            
+                            st.download_button(
+                                label="Download Data (Excel)",
+                                data=excel_data,
+                                file_name="nairaland_data.xlsx",
+                                mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+                            )
+                            
+                        elif export_format == "JSON":
+                            export_data = {
+                                "users": user_df.to_dict(orient="records"),
+                                "posts": post_df.to_dict(orient="records")
+                            }
+                            
+                            json_data = json.dumps(export_data, indent=4)
+                            
+                            st.download_button(
+                                label="Download Data (JSON)",
+                                data=json_data,
+                                file_name="nairaland_data.json",
+                                mime="application/json"
+                            )
+
+    # Close database connection
+    conn.close()
 
 if __name__ == "__main__":
     main()
