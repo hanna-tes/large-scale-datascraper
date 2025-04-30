@@ -28,6 +28,7 @@ from plotly.subplots import make_subplots
 import warnings
 from tqdm import tqdm
 from playwright.sync_api import sync_playwright
+import sqlite3
 
 # Suppress warnings
 warnings.filterwarnings('ignore')
