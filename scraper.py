@@ -110,7 +110,147 @@ def get_headers():
         'Connection': 'keep-alive',
         'Upgrade-Insecure-Requests': '1',
     }
+def scrape_all_user_topics(username, max_pages=10):
+    """Scrape ALL topics and their complete content for a user"""
+    results = []
+    base_url = f"https://www.nairaland.com/{username}/topics"
+    
+    try:
+        with sync_playwright() as p:
+            # Configure browser for Streamlit Cloud
+            browser = p.chromium.launch(
+                headless=True,
+                executable_path="/usr/bin/chromium-browser",
+                args=[
+                    '--no-sandbox',
+                    '--disable-dev-shm-usage',
+                    '--disable-gpu',
+                    '--single-process'
+                ]
+            )
+            
+            context = browser.new_context(
+                user_agent=ua.random,
+                viewport={'width': 1280, 'height': 720}
+            )
+            
+            page = context.new_page()
+            
+            # Navigate to user's topics page
+            page.goto(base_url, timeout=60000)
+            page.wait_for_selector("body", timeout=10000)
+            
+            # Debugging
+            st.write(f"🔄 Scraping topics for: {username}")
+            page.screenshot(path=f"debug_{username}_topics_page.png")
+            
+            current_page = 1
+            while current_page <= max_pages:
+                try:
+                    # Wait for topics to load
+                    page.wait_for_selector("tr[id^='top']", timeout=15000)
+                    
+                    # Get all topic rows using multiple selector patterns
+                    topic_rows = page.query_selector_all("""
+                        tr[id^='top'],  /* Rows with ID starting with 'top' */
+                        tr.threadRow,   /* Rows with threadRow class */
+                        tr:has(a[href*='/topic/']) /* Rows containing topic links */
+                    """)
+                    
+                    if not topic_rows:
+                        st.warning(f"No topics found on page {current_page}")
+                        break
+                    
+                    st.write(f"📄 Page {current_page}: Found {len(topic_rows)} topics")
+                    
+                    # Process each topic
+                    for row in topic_rows:
+                        try:
+                            # Extract topic link and title
+                            topic_link = row.query_selector("a[href*='/topic/']")
+                            if not topic_link:
+                                continue
+                                
+                            topic_title = topic_link.inner_text().strip()
+                            topic_url = "https://www.nairaland.com" + topic_link.get_attribute("href")
+                            
+                            # Extract category if available
+                            category_link = row.query_selector("a[href*='/board/']")
+                            category = category_link.inner_text().strip() if category_link else "General"
+                            
+                            # Scrape FULL topic content
+                            topic_content, replies = scrape_full_topic(page, topic_url)
+                            
+                            results.append({
+                                "username": username,
+                                "category": category,
+                                "title": topic_title,
+                                "url": topic_url,
+                                "content": topic_content,
+                                "replies": replies,
+                                "page_num": current_page
+                            })
+                            
+                        except Exception as e:
+                            st.warning(f"⚠️ Error processing topic: {str(e)}")
+                            continue
+                    
+                    # Pagination - try multiple next button selectors
+                    next_btn = None
+                    for selector in ["a.next", "a:has-text('Next')", "a >> text=Next"]:
+                        next_btn = page.query_selector(selector)
+                        if next_btn:
+                            break
+                    
+                    if not next_btn:
+                        st.write("🔚 No more pages found")
+                        break
+                        
+                    # Click next page with human-like delay
+                    st.write(f"⏭️ Moving to page {current_page + 1}")
+                    next_btn.click()
+                    time.sleep(random.uniform(2, 4))  # Random delay
+                    current_page += 1
+                    
+                except Exception as e:
+                    st.error(f"❌ Error processing page {current_page}: {str(e)}")
+                    break
+                    
+            browser.close()
+            
+    except Exception as e:
+        st.error(f"🔥 Critical error scraping {username}: {str(e)}")
+    
+    return results
 
+def scrape_full_topic(page, topic_url):
+    """Scrape ALL content from a topic page including replies"""
+    try:
+        page.goto(topic_url, timeout=30000)
+        page.wait_for_selector("div.narrow", timeout=15000)
+        
+        # Get all posts (original + replies)
+        posts = page.query_selector_all("div.narrow")
+        if not posts:
+            return "", 0
+            
+        # Combine all post content
+        full_content = []
+        for post in posts:
+            full_content.append(post.inner_text().strip())
+        
+        # First post is the original, rest are replies
+        main_content = full_content[0] if full_content else ""
+        replies_count = len(full_content) - 1
+        
+        # Clean and combine all text
+        cleaned_content = clean_text("\n\n".join(full_content))
+        
+        return cleaned_content, replies_count
+        
+    except Exception as e:
+        st.warning(f"⚠️ Error scraping topic {topic_url}: {str(e)}")
+        return "", 0
 # Clean the text content
 def clean_text(text):
     if not text:
@@ -342,19 +482,20 @@ def get_topic_details_with_retry(page, topic_url, max_retries=2):
 
 def scrape_multiple_users(usernames, pages_per_user=5, max_workers=3, delay=2):
     """
-    Scrape topics for multiple users concurrently with improved error handling
+    Scrape FULL topic content for multiple users concurrently.
+    Uses scrape_all_user_topics() instead of scrape_user_topics().
     """
     results = []
-    with st.spinner(f"Scraping data for {len(usernames)} users..."):
+    with st.spinner(f"Scraping FULL content for {len(usernames)} users..."):
         progress_bar = st.progress(0)
         
         def worker(username):
             try:
-                # Get profile data first
+                # Get profile data first (unchanged)
                 registration_date = scrape_user_profile(username)
                 
-                # Then get topics
-                topics = scrape_user_topics(username, pages_per_user, delay)
+                # NOW: Scrape FULL content (replaced scrape_user_topics)
+                topics = scrape_all_user_topics(username)  # <-- Changed here
                 
                 return {
                     'username': username,
@@ -370,7 +511,7 @@ def scrape_multiple_users(usernames, pages_per_user=5, max_workers=3, delay=2):
                     'error': str(e)
                 }
         
-        # Use ThreadPoolExecutor with limited workers to avoid overwhelming the server
+        # ThreadPoolExecutor (unchanged)
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {executor.submit(worker, username): username for username in usernames}
             
@@ -379,11 +520,8 @@ def scrape_multiple_users(usernames, pages_per_user=5, max_workers=3, delay=2):
                 if result.get('status') == 'success':
                     results.append(result)
                 
-                # Update progress
                 progress_bar.progress((i + 1) / len(usernames))
-                
-                # Random delay between processing users
-                time.sleep(random.uniform(delay, delay * 2))
+                time.sleep(random.uniform(delay, delay * 2))  # Random delay
     
     return results
 def save_to_database(data, conn):
@@ -1007,27 +1145,37 @@ def main():
             delay = st.number_input("Delay between requests (seconds)", min_value=0.5, max_value=5.0, value=1.0, step=0.5)
         
         # Start scraping
-        if st.button("Start Scraping") and usernames:
-            # Perform scraping
-            results = scrape_multiple_users(usernames, pages_per_user, max_workers, delay)
-            
-            # Save to database
-            save_to_database(results, conn)
-            
-            # Display summary
-            st.success(f"Scraping completed for {len(results)} users")
-            
-            # Show summary statistics
-            total_posts = sum(user['post_count'] for user in results)
-            st.write(f"Total posts scraped: {total_posts}")
-            
-            # Display post counts per user
-            post_counts = [(user['username'], user['post_count']) for user in results]
-            post_counts.sort(key=lambda x: x[1], reverse=True)
-            
-            post_count_df = pd.DataFrame(post_counts, columns=["Username", "Post Count"])
-            st.write("Posts per user:")
-            st.dataframe(post_count_df)
+        
+    # Start scraping (ALWAYS uses full-content scraping)
+    if st.button("Start Scraping") and usernames:
+        st.info("Scraping FULL topic content (posts, replies, etc.)...")
+        
+        # Perform scraping (now uses scrape_all_user_topics)
+        results = scrape_multiple_users(
+            usernames, 
+            pages_per_user, 
+            max_workers, 
+            delay,
+            scrape_function=scrape_all_user_topics  # Force full-content scraping
+        )
+        
+        # Save to database (unchanged)
+        save_to_database(results, conn)
+        
+        # Display summary (unchanged)
+        st.success(f"Scraping completed for {len(results)} users")
+        
+        # Show summary statistics (unchanged)
+        total_posts = sum(user['post_count'] for user in results)
+        st.write(f"Total posts scraped: {total_posts}")
+        
+        # Display post counts per user (unchanged)
+        post_counts = [(user['username'], user['post_count']) for user in results]
+        post_counts.sort(key=lambda x: x[1], reverse=True)
+        
+        post_count_df = pd.DataFrame(post_counts, columns=["Username", "Post Count"])
+        st.write("Posts per user:")
+        st.dataframe(post_count_df)
     
     # View Data page
     elif page == "View Data":
