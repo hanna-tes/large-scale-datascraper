@@ -455,48 +455,37 @@ def get_topic_details_with_retry(page, topic_url, max_retries=2):
     
     return "", 0
 
-def scrape_multiple_users(usernames, pages_per_user=5, max_workers=3, delay=2):
+def scrape_multiple_users(
+    usernames: list,
+    pages_per_user: int = 5,
+    max_workers: int = 3,
+    scrape_function=None  # Optional: Allow passing a custom scraping function
+):
     """
-    Scrape FULL topic content for multiple users concurrently.
-    Uses scrape_all_user_topics() instead of scrape_user_topics().
+    Scrape multiple users concurrently.
+    
+    Args:
+        usernames (list): List of usernames to scrape.
+        pages_per_user (int): Max pages to scrape per user.
+        max_workers (int): Number of concurrent workers.
+        scrape_function (callable): Optional custom scraping function.
     """
+    if scrape_function is None:
+        scrape_function = scrape_all_user_topics  # Default function
+    
     results = []
-    with st.spinner(f"Scraping FULL content for {len(usernames)} users..."):
-        progress_bar = st.progress(0)
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = [
+            executor.submit(scrape_function, username, pages_per_user)
+            for username in usernames
+        ]
         
-        def worker(username):
+        for future in as_completed(futures):
             try:
-                # Get profile data first (unchanged)
-                registration_date = scrape_user_profile(username)
-                
-                # NOW: Scrape FULL content (replaced scrape_user_topics)
-                topics = scrape_all_user_topics(username)  # <-- Changed here
-                
-                return {
-                    'username': username,
-                    'registration_date': registration_date,
-                    'topics': topics,
-                    'status': 'success'
-                }
+                user_results = future.result()
+                results.extend(user_results)
             except Exception as e:
-                st.error(f"Error processing {username}: {str(e)}")
-                return {
-                    'username': username,
-                    'status': 'failed',
-                    'error': str(e)
-                }
-        
-        # ThreadPoolExecutor (unchanged)
-        with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = {executor.submit(worker, username): username for username in usernames}
-            
-            for i, future in enumerate(concurrent.futures.as_completed(futures)):
-                result = future.result()
-                if result.get('status') == 'success':
-                    results.append(result)
-                
-                progress_bar.progress((i + 1) / len(usernames))
-                time.sleep(random.uniform(delay, delay * 2))  # Random delay
+                st.error(f"⚠️ Error scraping user: {str(e)}")
     
     return results
 def save_to_database(data, conn):
@@ -1126,13 +1115,7 @@ def main():
         st.info("Scraping FULL topic content (posts, replies, etc.)...")
         
         # Perform scraping (now uses scrape_all_user_topics)
-        results = scrape_multiple_users(
-            usernames, 
-            pages_per_user, 
-            max_workers, 
-            delay,
-            scrape_function=scrape_all_user_topics  # Force full-content scraping
-        )
+        results = scrape_multiple_users(usernames, pages_per_user, max_workers)
         
         # Save to database (unchanged)
         save_to_database(results, conn)
