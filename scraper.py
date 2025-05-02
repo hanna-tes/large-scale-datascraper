@@ -462,43 +462,25 @@ def scrape_multiple_users(
     max_workers: int = 3,
     scrape_function=None
 ):
-    """
-    Scrape multiple users concurrently.
-    
-    Args:
-        usernames (list): List of usernames to scrape
-        pages_per_user (int): Max pages to scrape per user
-        max_workers (int): Number of concurrent workers
-        scrape_function (callable): Optional custom scraping function
-    """
+    """Scrape multiple users concurrently using local functions"""
     if scrape_function is None:
-        try:
-            # Try absolute import first
-            from scraping_functions import scrape_all_user_topics
-        except ImportError:
-            # Fallback to relative import
-            from .scraping_functions import scrape_all_user_topics
-        scrape_function = scrape_all_user_topics
+        scrape_function = scrape_all_user_topics  # Now using local function
     
     results = []
     
-    try:
-        with ThreadPoolExecutor(max_workers=max_workers) as executor:
-            futures = [
-                executor.submit(scrape_function, username, pages_per_user)
-                for username in usernames
-            ]
-            
-            for future in as_completed(futures):
-                try:
-                    user_results = future.result()
-                    results.extend(user_results)
-                except Exception as e:
-                    st.error(f"⚠️ Error scraping user: {str(e)}")
-                    continue
-    
-    except Exception as e:
-        st.error(f"🔥 Thread pool error: {str(e)}")
+    with ThreadPoolExecutor(max_workers=max_workers) as executor:
+        futures = {
+            executor.submit(scrape_function, username, pages_per_user): username
+            for username in usernames
+        }
+        
+        for future in as_completed(futures):
+            username = futures[future]
+            try:
+                results.extend(future.result())
+                print(f"✅ Successfully scraped {username}")
+            except Exception as e:
+                print(f"❌ Failed to scrape {username}: {str(e)}")
     
     return results
 def save_to_database(data, conn):
