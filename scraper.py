@@ -7,6 +7,7 @@ Original file is located at
     https://colab.research.google.com/drive/1ZOnPx4o1sNiThSPpaCJ4trhoglvVScl0
 """
 import requests
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from bs4 import BeautifulSoup
 import time
 import random
@@ -459,33 +460,39 @@ def scrape_multiple_users(
     usernames: list,
     pages_per_user: int = 5,
     max_workers: int = 3,
-    scrape_function=None  # Optional: Allow passing a custom scraping function
+    scrape_function=None
 ):
     """
     Scrape multiple users concurrently.
     
     Args:
-        usernames (list): List of usernames to scrape.
-        pages_per_user (int): Max pages to scrape per user.
-        max_workers (int): Number of concurrent workers.
-        scrape_function (callable): Optional custom scraping function.
+        usernames (list): List of usernames to scrape
+        pages_per_user (int): Max pages to scrape per user
+        max_workers (int): Number of concurrent workers
+        scrape_function (callable): Optional custom scraping function
     """
     if scrape_function is None:
         scrape_function = scrape_all_user_topics  # Default function
     
     results = []
-    with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = [
-            executor.submit(scrape_function, username, pages_per_user)
-            for username in usernames
-        ]
-        
-        for future in as_completed(futures):
-            try:
-                user_results = future.result()
-                results.extend(user_results)
-            except Exception as e:
-                st.error(f"⚠️ Error scraping user: {str(e)}")
+    
+    try:
+        with ThreadPoolExecutor(max_workers=max_workers) as executor:
+            futures = [
+                executor.submit(scrape_function, username, pages_per_user)
+                for username in usernames
+            ]
+            
+            for future in as_completed(futures):
+                try:
+                    user_results = future.result()
+                    results.extend(user_results)
+                except Exception as e:
+                    st.error(f"⚠️ Error scraping user: {str(e)}")
+                    continue
+    
+    except Exception as e:
+        st.error(f"🔥 Thread pool error: {str(e)}")
     
     return results
 def save_to_database(data, conn):
