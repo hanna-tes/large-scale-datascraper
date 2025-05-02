@@ -200,11 +200,13 @@ def scrape_user_topics(username, max_pages=5, max_retries=3):
                 # Launch browser with proxy if needed
                 browser = p.chromium.launch(
                     headless=True,
-                    # proxy={
-                    #     "server": "your-proxy-server:port",
-                    #     "username": "your-username",
-                    #     "password": "your-password"
-                    # }
+                    executable_path="/usr/bin/chromium-browser",
+                    args=[
+                        '--no-sandbox',
+                        '--disable-dev-shm-usage',
+                        '--disable-gpu',
+                        '--single-process'
+                    ]
                 )
                 
                 context = browser.new_context(
