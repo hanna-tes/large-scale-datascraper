@@ -117,140 +117,115 @@ def scrape_all_user_topics(username, max_pages=10):
     
     try:
         with sync_playwright() as p:
-            # Configure browser for Streamlit Cloud
-            browser = p.chromium.launch(
-                headless=True,
-                executable_path="/usr/bin/chromium-browser",
-                args=[
-                    '--no-sandbox',
-                    '--disable-dev-shm-usage',
-                    '--disable-gpu',
-                    '--single-process'
-                ]
-            )
-            
+            # Launch browser with stealth settings
+            browser = p.chromium.launch(headless=True)
             context = browser.new_context(
-                user_agent=ua.random,
-                viewport={'width': 1280, 'height': 720}
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+                viewport={"width": 1280, "height": 1024}
             )
-            
             page = context.new_page()
             
             # Navigate to user's topics page
             page.goto(base_url, timeout=60000)
-            page.wait_for_selector("body", timeout=10000)
-            
-            # Debugging
-            st.write(f"🔄 Scraping topics for: {username}")
-            page.screenshot(path=f"debug_{username}_topics_page.png")
+            page.wait_for_selector("tr[id^='top']", timeout=15000)
             
             current_page = 1
+            prev_topic_count = 0
+            
             while current_page <= max_pages:
-                try:
-                    # Wait for topics to load
-                    page.wait_for_selector("tr[id^='top']", timeout=15000)
-                    
-                    # Get all topic rows using multiple selector patterns
-                    topic_rows = page.query_selector_all("""
-                        tr[id^='top'],  /* Rows with ID starting with 'top' */
-                        tr.threadRow,   /* Rows with threadRow class */
-                        tr:has(a[href*='/topic/']) /* Rows containing topic links */
-                    """)
-                    
-                    if not topic_rows:
-                        st.warning(f"No topics found on page {current_page}")
-                        break
-                    
-                    st.write(f"📄 Page {current_page}: Found {len(topic_rows)} topics")
-                    
-                    # Process each topic
-                    for row in topic_rows:
-                        try:
-                            # Extract topic link and title
-                            topic_link = row.query_selector("a[href*='/topic/']")
-                            if not topic_link:
-                                continue
-                                
-                            topic_title = topic_link.inner_text().strip()
-                            topic_url = "https://www.nairaland.com" + topic_link.get_attribute("href")
-                            
-                            # Extract category if available
-                            category_link = row.query_selector("a[href*='/board/']")
-                            category = category_link.inner_text().strip() if category_link else "General"
-                            
-                            # Scrape FULL topic content
-                            topic_content, replies = scrape_full_topic(page, topic_url)
-                            
-                            results.append({
-                                "username": username,
-                                "category": category,
-                                "title": topic_title,
-                                "url": topic_url,
-                                "content": topic_content,
-                                "replies": replies,
-                                "page_num": current_page
-                            })
-                            
-                        except Exception as e:
-                            st.warning(f"⚠️ Error processing topic: {str(e)}")
-                            continue
-                    
-                    # Pagination - try multiple next button selectors
-                    next_btn = None
-                    for selector in ["a.next", "a:has-text('Next')", "a >> text=Next"]:
-                        next_btn = page.query_selector(selector)
-                        if next_btn:
-                            break
-                    
-                    if not next_btn:
-                        st.write("🔚 No more pages found")
-                        break
-                        
-                    # Click next page with human-like delay
-                    st.write(f"⏭️ Moving to page {current_page + 1}")
-                    next_btn.click()
-                    time.sleep(random.uniform(2, 4))  # Random delay
-                    current_page += 1
-                    
-                except Exception as e:
-                    st.error(f"❌ Error processing page {current_page}: {str(e)}")
+                # Get all topic rows
+                topic_rows = page.query_selector_all("tr[id^='top']")
+                
+                if not topic_rows or len(topic_rows) == prev_topic_count:
+                    print("🔚 No new topics found, stopping.")
                     break
-                    
+                
+                print(f"📄 Page {current_page}: Found {len(topic_rows)} topics")
+                prev_topic_count = len(topic_rows)
+                
+                # Process each topic row
+                for row in topic_rows:
+                    try:
+                        # Extract topic details
+                        topic_link = row.query_selector("b > a[href*='/topic/']") or row.query_selector("a[href*='/topic/']")
+                        if not topic_link:
+                            continue
+                        
+                        topic_title = topic_link.inner_text().strip()
+                        topic_url = "https://www.nairaland.com" + topic_link.get_attribute("href")
+                        
+                        # Extract category
+                        category_link = row.query_selector("b > a[href*='/board/']") or row.query_selector("a[href*='/board/']")
+                        category = category_link.inner_text().strip() if category_link else "General"
+                        
+                        # Extract stats (views, time)
+                        stats = row.query_selector("span.s")
+                        stats_text = stats.inner_text() if stats else ""
+                        
+                        # Scrape full topic content
+                        topic_content, replies = scrape_full_topic(page, topic_url)
+                        
+                        results.append({
+                            "username": username,
+                            "category": category,
+                            "title": topic_title,
+                            "url": topic_url,
+                            "content": topic_content,
+                            "replies": replies,
+                            "stats": stats_text,
+                            "page_num": current_page,
+                            "scraped_at": datetime.datetime.now().isoformat()
+                        })
+                        
+                        # Random delay to avoid rate limiting
+                        time.sleep(random.uniform(2, 5))
+                        
+                    except Exception as e:
+                        print(f"⚠️ Error processing topic: {str(e)}")
+                        continue
+                
+                # Pagination - Check if "Next" button exists
+                next_btn = page.query_selector("a:has-text('Next')")
+                if not next_btn:
+                    print("🔚 No more pages found")
+                    break
+                
+                # Click next page with delay
+                next_btn.click()
+                time.sleep(random.uniform(3, 6))
+                current_page += 1
+                
             browser.close()
             
     except Exception as e:
-        st.error(f"🔥 Critical error scraping {username}: {str(e)}")
+        print(f"🔥 Critical error scraping {username}: {str(e)}")
     
     return results
 
+
 def scrape_full_topic(page, topic_url):
-    """Scrape ALL content from a topic page including replies"""
+    """Scrape complete topic content including replies"""
     try:
         page.goto(topic_url, timeout=30000)
         page.wait_for_selector("div.narrow", timeout=15000)
         
-        # Get all posts (original + replies)
-        posts = page.query_selector_all("div.narrow")
-        if not posts:
-            return "", 0
-            
-        # Combine all post content
-        full_content = []
-        for post in posts:
-            full_content.append(post.inner_text().strip())
+        # Extract main content
+        main_post = page.query_selector("div.narrow")
+        main_content = main_post.inner_text().strip() if main_post else ""
         
-        # First post is the original, rest are replies
-        main_content = full_content[0] if full_content else ""
-        replies_count = len(full_content) - 1
+        # Extract all replies
+        replies = page.query_selector_all("div.narrow:not(:first-child)")
+        replies_content = [reply.inner_text().strip() for reply in replies]
         
-        # Clean and combine all text
-        cleaned_content = clean_text("\n\n".join(full_content))
-        
-        return cleaned_content, replies_count
+        return {
+            "original_post": main_content,
+            "replies": replies_content,
+            "total_replies": len(replies)
+        }, len(replies)
         
     except Exception as e:
-        st.warning(f"⚠️ Error scraping topic {topic_url}: {str(e)}")
-        return "", 0
+        print(f"⚠️ Error scraping topic {topic_url}: {str(e)}")
+        return {}, 0
 # Clean the text content
 def clean_text(text):
     if not text:
