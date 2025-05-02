@@ -472,7 +472,13 @@ def scrape_multiple_users(
         scrape_function (callable): Optional custom scraping function
     """
     if scrape_function is None:
-        scrape_function = scrape_all_user_topics  # Default function
+        try:
+            # Try absolute import first
+            from scraping_functions import scrape_all_user_topics
+        except ImportError:
+            # Fallback to relative import
+            from .scraping_functions import scrape_all_user_topics
+        scrape_function = scrape_all_user_topics
     
     results = []
     
