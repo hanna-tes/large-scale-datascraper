@@ -111,122 +111,7 @@ def get_headers():
         'Connection': 'keep-alive',
         'Upgrade-Insecure-Requests': '1',
     }
-def scrape_all_user_topics(username, max_pages=10):
-    """Scrape ALL topics and their complete content for a user"""
-    results = []
-    base_url = f"https://www.nairaland.com/{username}/topics"
-    
-    try:
-        with sync_playwright() as p:
-            # Launch browser with stealth settings
-            browser = p.chromium.launch(headless=True)
-            context = browser.new_context(
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
-                viewport={"width": 1280, "height": 1024}
-            )
-            page = context.new_page()
-            
-            # Navigate to user's topics page
-            page.goto(base_url, timeout=60000)
-            page.wait_for_selector("tr[id^='top']", timeout=15000)
-            
-            current_page = 1
-            prev_topic_count = 0
-            
-            while current_page <= max_pages:
-                # Get all topic rows
-                topic_rows = page.query_selector_all("tr[id^='top']")
-                
-                if not topic_rows or len(topic_rows) == prev_topic_count:
-                    print("🔚 No new topics found, stopping.")
-                    break
-                
-                print(f"📄 Page {current_page}: Found {len(topic_rows)} topics")
-                prev_topic_count = len(topic_rows)
-                
-                # Process each topic row
-                for row in topic_rows:
-                    try:
-                        # Extract topic details
-                        topic_link = row.query_selector("b > a[href*='/topic/']") or row.query_selector("a[href*='/topic/']")
-                        if not topic_link:
-                            continue
-                        
-                        topic_title = topic_link.inner_text().strip()
-                        topic_url = "https://www.nairaland.com" + topic_link.get_attribute("href")
-                        
-                        # Extract category
-                        category_link = row.query_selector("b > a[href*='/board/']") or row.query_selector("a[href*='/board/']")
-                        category = category_link.inner_text().strip() if category_link else "General"
-                        
-                        # Extract stats (views, time)
-                        stats = row.query_selector("span.s")
-                        stats_text = stats.inner_text() if stats else ""
-                        
-                        # Scrape full topic content
-                        topic_content, replies = scrape_full_topic(page, topic_url)
-                        
-                        results.append({
-                            "username": username,
-                            "category": category,
-                            "title": topic_title,
-                            "url": topic_url,
-                            "content": topic_content,
-                            "replies": replies,
-                            "stats": stats_text,
-                            "page_num": current_page,
-                            "scraped_at": datetime.datetime.now().isoformat()
-                        })
-                        
-                        # Random delay to avoid rate limiting
-                        time.sleep(random.uniform(2, 5))
-                        
-                    except Exception as e:
-                        print(f"⚠️ Error processing topic: {str(e)}")
-                        continue
-                
-                # Pagination - Check if "Next" button exists
-                next_btn = page.query_selector("a:has-text('Next')")
-                if not next_btn:
-                    print("🔚 No more pages found")
-                    break
-                
-                # Click next page with delay
-                next_btn.click()
-                time.sleep(random.uniform(3, 6))
-                current_page += 1
-                
-            browser.close()
-            
-    except Exception as e:
-        print(f"🔥 Critical error scraping {username}: {str(e)}")
-    
-    return results
 
-
-def scrape_full_topic(page, topic_url):
-    """Scrape complete topic content including replies"""
-    try:
-        page.goto(topic_url, timeout=30000)
-        page.wait_for_selector("div.narrow", timeout=15000)
-        
-        # Extract main content
-        main_post = page.query_selector("div.narrow")
-        main_content = main_post.inner_text().strip() if main_post else ""
-        
-        # Extract all replies
-        replies = page.query_selector_all("div.narrow:not(:first-child)")
-        replies_content = [reply.inner_text().strip() for reply in replies]
-        
-        return {
-            "original_post": main_content,
-            "replies": replies_content,
-            "total_replies": len(replies)
-        }, len(replies)
-        
-    except Exception as e:
-        print(f"⚠️ Error scraping topic {topic_url}: {str(e)}")
-        return {}, 0
 # Clean the text content
 def clean_text(text):
     if not text:
@@ -237,30 +122,17 @@ def clean_text(text):
     text = re.sub(r'\d+', ' ', text)
     text = re.sub(r'\s+', ' ', text)
     return text.strip()
-
+    
 def scrape_user_profile(username, max_retries=3):
     """Scrape registration date from Nairaland profile page with retries"""
     profile_url = f"https://www.nairaland.com/{username}"
-    
     for attempt in range(max_retries):
         try:
             # Random delay between requests (2-5 seconds)
             time.sleep(random.uniform(2, 5))
-            
             response = requests.get(profile_url, headers=get_headers(), timeout=10)
-            
-            # Debug: Save HTML for inspection
-            if response.status_code != 200:
-                with open(f"debug_profile_{username}_attempt_{attempt}.html", "w", encoding="utf-8") as f:
-                    f.write(response.text)
-            
             if response.status_code == 200:
                 soup = BeautifulSoup(response.text, 'html.parser')
-                
-                # Debug: Save parsed HTML
-                with open(f"debug_profile_{username}_parsed.html", "w", encoding="utf-8") as f:
-                    f.write(soup.prettify())
-                
                 # Method 1: Look for 'Time registered' pattern
                 time_registered = soup.find('b', text=lambda t: t and 'Time registered' in t)
                 if time_registered:
@@ -270,7 +142,6 @@ def scrape_user_profile(username, max_retries=3):
                         if date_text.startswith(':'):
                             date_text = date_text[1:].strip()
                         return date_text
-                
                 # Method 2: Alternative approach
                 for p in soup.find_all('p'):
                     if 'Time registered' in p.text:
@@ -280,7 +151,6 @@ def scrape_user_profile(username, max_retries=3):
                             if date_text.startswith(':'):
                                 date_text = date_text[1:].strip()
                             return date_text
-                
                 # Method 3: Fallback to profile table
                 profile_table = soup.find('table', {'summary': 'profile'})
                 if profile_table:
@@ -289,31 +159,25 @@ def scrape_user_profile(username, max_retries=3):
                             b_tag = tr.find('b')
                             if b_tag:
                                 return b_tag.get_text(strip=True)
-                
                 return None
-                
             elif response.status_code == 403:
                 st.warning(f"Access forbidden for {username}. You may be blocked.")
                 return None
-                
         except Exception as e:
             print(f"Attempt {attempt + 1} failed for {username}: {str(e)}")
             if attempt == max_retries - 1:
                 print(f"Max retries reached for {username}")
                 return None
             time.sleep(random.uniform(5, 10))  # Longer delay between retries
-    
     return None
 
 def scrape_user_topics(username, max_pages=5, max_retries=3):
     """Scrape user topics with retries and improved error handling"""
     results = []
     topic_url = f"https://www.nairaland.com/{username}/topics"
-    
     for attempt in range(max_retries):
         try:
             with sync_playwright() as p:
-                # Launch browser with proxy if needed
                 browser = p.chromium.launch(
                     headless=True,
                     executable_path="/usr/bin/chromium-browser",
@@ -324,67 +188,40 @@ def scrape_user_topics(username, max_pages=5, max_retries=3):
                         '--single-process'
                     ]
                 )
-                
                 context = browser.new_context(
                     user_agent=ua.random,
                     viewport={'width': 1920, 'height': 1080},
                     locale='en-US'
                 )
-                
                 page = context.new_page()
-                
-                # Set random delay before navigation
                 time.sleep(random.uniform(1, 3))
-                
-                # Navigate to page
                 page.goto(topic_url, timeout=60000)
-                
-                # Check for blocking
                 if "blocked" in page.title().lower():
                     st.warning(f"Blocked when accessing {username}'s topics")
                     return results
-                
-                # Save screenshot for debugging
                 page.screenshot(path=f"debug_{username}_topics.png", full_page=True)
-                
                 for page_num in range(max_pages):
                     try:
-                        # Wait for content with timeout
                         page.wait_for_selector("table", timeout=15000)
-                        
-                        # Get page content
                         html = page.content()
-                        
-                        # Save HTML for debugging
                         with open(f"debug_topics_{username}_page_{page_num}.html", "w", encoding="utf-8") as f:
                             f.write(html)
-                            
                         soup = BeautifulSoup(html, "html.parser")
-                        
-                        # Find topic rows - multiple possible selectors
                         rows = soup.find_all(lambda tag: tag.name == 'tr' and tag.get('id', '').startswith('top'))
                         if not rows:
                             rows = soup.select("tr.threadRow")
                         if not rows:
                             rows = soup.select("tr:has(.topic)")
-                        
                         for row in rows:
                             try:
-                                # Find topic link
                                 topic_link = row.find('a', href=lambda x: x and '/topic/' in x)
                                 if not topic_link:
                                     continue
-                                    
                                 topic_title = topic_link.get_text(strip=True)
                                 topic_url = "https://www.nairaland.com" + topic_link["href"]
-                                
-                                # Get category
                                 category_tag = row.find('a', href=lambda x: x and '/board/' in x)
                                 category_name = category_tag.get_text(strip=True) if category_tag else "Unknown"
-                                
-                                # Get topic details with retry
                                 content, replies = get_topic_details_with_retry(page, topic_url)
-                                
                                 results.append({
                                     "username": username,
                                     "category": category_name,
@@ -393,95 +230,65 @@ def scrape_user_topics(username, max_pages=5, max_retries=3):
                                     "content": content,
                                     "replies": replies
                                 })
-                                
                             except Exception as e:
                                 print(f"Error parsing topic row: {str(e)}")
                                 continue
-                                
-                        # Pagination
                         next_btn = page.query_selector("a.next")
                         if not next_btn:
                             break
-                            
-                        # Random delay before clicking next
                         time.sleep(random.uniform(2, 4))
-                        
-                        # Click next page
                         next_btn.click()
-                        
                     except Exception as e:
                         print(f"Error processing page {page_num}: {str(e)}")
                         break
-                        
                 browser.close()
                 return results
-                
         except Exception as e:
             print(f"Attempt {attempt + 1} failed for {username}: {str(e)}")
             if attempt == max_retries - 1:
                 print(f"Max retries reached for {username}")
                 return results
-            time.sleep(random.uniform(10, 20))  # Longer delay between retries
-    
+            time.sleep(random.uniform(10, 20))
     return results
 
 def get_topic_details_with_retry(page, topic_url, max_retries=2):
     """Get topic details with retry mechanism"""
     for attempt in range(max_retries):
         try:
-            # Random delay before navigation
             time.sleep(random.uniform(1, 3))
-            
             page.goto(topic_url, timeout=30000)
             page.wait_for_selector("div.narrow", timeout=15000)
-            
-            # Save screenshot for debugging
             page.screenshot(path=f"debug_topic_{topic_url.split('/')[-1]}.png")
-            
             topic_html = page.content()
             soup = BeautifulSoup(topic_html, "html.parser")
-            
             content_div = soup.find("div", class_="narrow")
             content = clean_text(content_div.get_text()) if content_div else ""
-            
             replies = len(soup.select("div.narrow")) - 1  # Exclude OP
-            
             return content, replies
-            
         except Exception as e:
             print(f"Attempt {attempt + 1} failed for topic {topic_url}: {str(e)}")
             if attempt == max_retries - 1:
                 return "", 0
-            time.sleep(random.uniform(5, 10))
-    
     return "", 0
 
-def scrape_multiple_users(
-    usernames: list,
-    pages_per_user: int = 5,
-    max_workers: int = 3,
-    scrape_function=None
-):
-    """Scrape multiple users concurrently using local functions"""
-    if scrape_function is None:
-        scrape_function = scrape_all_user_topics  # Now using local function
-    
+def scrape_multiple_users(usernames, max_pages=5, max_workers=3):
+    """
+    Scrapes topics from multiple users concurrently
+    """
     results = []
-    
     with ThreadPoolExecutor(max_workers=max_workers) as executor:
-        futures = {
-            executor.submit(scrape_function, username, pages_per_user): username
-            for username in usernames
-        }
-        
-        for future in as_completed(futures):
-            username = futures[future]
+        futures = []
+        for username in usernames:
+            print(f"Starting scrape for {username}")
+            future = executor.submit(scrape_user_topics, username, max_pages)
+            futures.append((username, future))
+        for username, future in futures:
             try:
-                results.extend(future.result())
-                print(f"✅ Successfully scraped {username}")
+                user_topics = future.result()
+                results.extend(user_topics)
+                print(f"Completed scrape for {username}: {len(user_topics)} topics found")
             except Exception as e:
-                print(f"❌ Failed to scrape {username}: {str(e)}")
-    
+                print(f"Failed to scrape {username}: {e}")
     return results
 def save_to_database(data, conn):
     cursor = conn.cursor()
