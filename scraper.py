@@ -39,7 +39,8 @@ import os
 warnings.filterwarnings('ignore')
 
 import os
-os.environ['DISPLAY'] = ':1'
+os.environ['CHROME_BIN'] = '/usr/bin/chromium'
+os.environ['CHROME_DRIVER'] = '/root/.wdm/drivers/chromedriver/linux64*/chromedriver'
 
 # Setup Selenium WebDriver with User-Agent and headless mode
 
