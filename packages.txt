@@ -1,8 +1,0 @@
-#chromium
-#chromium-driver
-#libgbm1
-#libxshmfence1
-#xvfb
-#libgl1
-#libglib2.0-0
-#libsm6
