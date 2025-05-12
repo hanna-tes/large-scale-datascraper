@@ -38,7 +38,11 @@ import os
 # Suppress warnings
 warnings.filterwarnings('ignore')
 
+import os
+os.environ['DISPLAY'] = ':1'
+
 # Setup Selenium WebDriver with User-Agent and headless mode
+
 def create_driver():
     chrome_options = Options()
     chrome_options.add_argument("--headless=new")
@@ -46,7 +50,8 @@ def create_driver():
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
     chrome_options.add_argument("--window-size=1920,1080")
-    chrome_options.binary_location = "/usr/bin/chromium-browser"
+    chrome_options.add_argument("--remote-debugging-port=9222")
+    chrome_options.binary_location = "/usr/bin/chromium"
 
     driver = webdriver.Chrome(
         service=ChromeService(ChromeDriverManager().install()),
