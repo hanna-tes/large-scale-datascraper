@@ -1,2 +1,4 @@
 #!/bin/bash
-playwright install --with-deps
+echo "📦 Installing Playwright browsers..."
+playwright install firefox
+
