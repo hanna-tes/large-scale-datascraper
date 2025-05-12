@@ -103,14 +103,13 @@ def main():
     if st.button("🚀 Start Scraping"):
         st.info("Installing browser (first-time only)...")
         
-        # Initialize all_data early to avoid UnboundLocalError
-        all_data = []
+        all_data = []  # Initialize early to prevent UnboundLocalError
         
         try:
             with sync_playwright() as p:
                 try:
-                    # Try to launch browser
-                    browser = p.chromium.launch(headless=True)
+                    # 🔥 Switched to Firefox
+                    browser = p.firefox.launch(headless=True)
                     page = browser.new_page()
                     
                     progress_bar = st.progress(0)
@@ -136,8 +135,7 @@ def main():
                     
                     Try:
                     1. Redeploying the app
-                    2. Using Firefox instead (ask me how)
-                    3. Clearing browser cache manually
+                    2. Clearing browser cache manually
                     """)
                     return
 
@@ -145,7 +143,6 @@ def main():
             st.error(f"💥 Critical browser launch error: {str(launch_error)}")
             return
 
-        # This is now safe due to early initialization
         if all_data:
             df = pd.DataFrame(all_data)
             df = df[['Username', 'Title', 'Category', 'URL', 'Post Content', 'Shares', 'Likes', 'Replies']]
