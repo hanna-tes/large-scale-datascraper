@@ -1,5 +1,7 @@
-chromium-chromedriver
-chromium-browser
+chromium
+chromium-driver
+libgbm1
+libxshmfence1
 wget
 unzip
 xvfb
