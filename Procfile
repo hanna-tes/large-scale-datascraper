@@ -1,1 +1,1 @@
-web: sh -c 'MAX_RETRIES=5 RETRY_DELAY=10; for i in $(seq 1 $MAX_RETRIES); do playwright install chromium && break || sleep $RETRY_DELAY; done; streamlit run scraper.py'
+web: sh -c 'export PLAYWRIGHT_DOWNLOAD_HOST=https://npmmirror.com/mirrors/playwright  && MAX_RETRIES=5; for i in $(seq 1 $MAX_RETRIES); do playwright install firefox && break || sleep 10; done; streamlit run scraper.py'
