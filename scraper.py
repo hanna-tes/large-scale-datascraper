@@ -99,28 +99,58 @@ def main():
     if len(usernames) > 10:
         st.error("Please enter no more than 10 usernames")
         return
-    
+
     if st.button("🚀 Start Scraping"):
-        all_data = []
-        progress_bar = st.progress(0)
-        status_text = st.empty()
-        
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
-            
-            for i, username in enumerate(usernames):
-                status_text.text(f"Processing {username} ({i+1}/{len(usernames)})...")
-                try:
-                    user_data = scrape_user_topics(page, username)
-                    all_data.extend(user_data)
-                except Exception as e:
-                    st.error(f"❌ Error with {username}: {str(e)}")
+        st.info("Installing browser (first-time only)...")
+
+        # Try to launch browser
+        try:
+            with sync_playwright() as p:
+                browser = p.chromium.launch(headless=True)
+                page = browser.new_page()
                 
-                progress_bar.progress((i + 1)/len(usernames))
-                time.sleep(random.uniform(2, 4))  # Respect rate limits
+                all_data = []
+                progress_bar = st.progress(0)
+                status_text = st.empty()
+
+                for i, username in enumerate(usernames):
+                    status_text.text(f"Processing {username} ({i+1}/{len(usernames)})...")
+                    try:
+                        user_data = scrape_user_topics(page, username)
+                        all_data.extend(user_data)
+                    except Exception as e:
+                        st.error(f"❌ Error with {username}: {str(e)}")
+                    
+                    progress_bar.progress((i + 1)/len(usernames))
+                    time.sleep(random.uniform(2, 4))  # Respect rate limits
+                
+                browser.close()
+                
+                if all_data:
+                    df = pd.DataFrame(all_data)
+                    df = df[['Username', 'Title', 'Category', 'URL', 'Post Content', 'Shares', 'Likes', 'Replies']]
+                    st.success(f"✅ Successfully scraped {len(df)} topics from {len(usernames)} users!")
+                    st.dataframe(df)
+                    csv = df.to_csv(index=False)
+                    st.download_button(
+                        label="⬇️ Download CSV",
+                        data=csv,
+                        file_name="nairaland_data.csv",
+                        mime="text/csv"
+                    )
+                else:
+                    st.warning("No data was scraped.")
+
+        except Exception as e:
+            st.error(f"🚨 Browser launch failed: {str(e)}")
+            st.markdown("""
+            This usually happens if the browser wasn't installed correctly.
             
-            browser.close()
+            Please try deploying again with:
+            ```bash
+            playwright install chromium
+            ```
+            """)
         
         if all_data:
             df = pd.DataFrame(all_data)
