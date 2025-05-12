@@ -1,1 +1,1 @@
-web: sh -c 'streamlit run scraper.py'
+web: sh -c 'playwright install chromium && streamlit run scraper.py'
