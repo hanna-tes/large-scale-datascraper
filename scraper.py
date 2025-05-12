@@ -7,12 +7,12 @@ Original file is located at
     https://colab.research.google.com/drive/1ZOnPx4o1sNiThSPpaCJ4trhoglvVScl0
 """
 import requests
-from concurrent.futures import ThreadPoolExecutor, as_completed
+#from concurrent.futures import ThreadPoolExecutor, as_completed
 from bs4 import BeautifulSoup
 import time
 import random
-from playwright.sync_api import sync_playwright
-import sqlite3
+#from playwright.sync_api import sync_playwright
+#import sqlite3
 import datetime
 import pandas as pd
 import numpy as np
