@@ -4,3 +4,5 @@ libxcb1
 libasound2
 libatk-bridge2.0-0
 libgtk-3-0
+chromium-chromedriver
+google-chrome-stable
