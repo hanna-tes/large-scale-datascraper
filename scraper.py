@@ -103,12 +103,13 @@ def main():
     if st.button("🚀 Start Scraping"):
         st.info("Installing browser (first-time only)...")
         
-        # Initialize data early to avoid UnboundLocalError
+        # Initialize all_data early to avoid UnboundLocalError
         all_data = []
         
         try:
             with sync_playwright() as p:
                 try:
+                    # Try to launch browser
                     browser = p.chromium.launch(headless=True)
                     page = browser.new_page()
                     
@@ -130,18 +131,18 @@ def main():
                     
                 except Exception as inner_error:
                     st.error(f"🚨 Browser operation failed: {str(inner_error)}")
+                    st.markdown("""
+                    This usually means the browser didn't install correctly.
+                    
+                    Try:
+                    1. Redeploying the app
+                    2. Using Firefox instead (ask me how)
+                    3. Clearing browser cache manually
+                    """)
                     return
 
         except Exception as launch_error:
             st.error(f"💥 Critical browser launch error: {str(launch_error)}")
-            st.markdown("""
-            This usually means the browser didn't install correctly.
-            
-            Try:
-            1. Redeploying the app
-            2. Using Firefox instead (ask me how)
-            3. Clearing browser cache manually
-            """)
             return
 
         # This is now safe due to early initialization
@@ -159,6 +160,5 @@ def main():
             )
         else:
             st.warning("No data was scraped.")
-
 if __name__ == "__main__":
     main()
