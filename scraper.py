@@ -26,15 +26,25 @@ warnings.filterwarnings('ignore')
 def get_driver():
     chrome_options = Options()
     chrome_options.add_argument("--headless")
-    chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
 
-    chrome_path = shutil.which("chromium-browser") or shutil.which("chromium")
+    # 🔍 Debug prints to check available browsers
+    print("chromium-browser:", shutil.which("chromium-browser"))
+    print("chromium:", shutil.which("chromium"))
+    print("google-chrome:", shutil.which("google-chrome"))
+    print("PATH:", os.environ["PATH"])
+
+    chrome_path = (
+        shutil.which("chromium-browser") or
+        shutil.which("chromium") or
+        shutil.which("google-chrome")
+    )
+
     if chrome_path:
         chrome_options.binary_location = chrome_path
     else:
-        raise FileNotFoundError("Chromium not found in the environment.")
+        raise FileNotFoundError("Neither Chromium nor Google Chrome found in the environment.")
 
     service = ChromeService(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=chrome_options)
