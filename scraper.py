@@ -28,6 +28,11 @@ def get_driver():
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
 
+     #Explicitly set path to Google Chrome binary
+    chrome_path = "/usr/bin/google-chrome"
+    if os.path.exists(chrome_path):
+        chrome_options.binary_location = chrome_path
+
     service = ChromeService(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=chrome_options)
     return driver
