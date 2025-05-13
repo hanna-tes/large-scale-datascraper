@@ -125,8 +125,8 @@ def main():
         st.info("Starting scraping process...")
         driver = get_driver()
         if driver is None:
-        st.error("❌ Scraper cannot continue without a working browser.")
-        return 
+            st.error("❌ Scraper cannot continue without a working browser.")
+            return
 
         all_data = []
         progress_bar = st.progress(0)
