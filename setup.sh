@@ -35,3 +35,4 @@ echo "Python dependencies installed"
 playwright install chromium
 echo "Chromium installed"
 echo "setup.sh completed"
+exit 0
