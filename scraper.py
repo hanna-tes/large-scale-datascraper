@@ -29,14 +29,13 @@ from selenium.webdriver.chrome.options import Options
 
 def get_driver():
     chrome_options = Options()
-    chrome_options.add_argument('--headless')  # or '--headless=new' depending on version
+    chrome_options.add_argument('--headless')
     chrome_options.add_argument('--no-sandbox')
     chrome_options.add_argument('--disable-dev-shm-usage')
 
     try:
-        # Replace the URL below with your actual remote WebDriver endpoint
         driver = webdriver.Remote(
-            command_executor="https://chrome.browserless.io/webdriver?token=2SIxXh7Fp6lAXEx29f20a40520e72e866af5ff4a16339a007",
+            command_executor="https://chrome.browserless.io/webdriver?token=YOUR_API_TOKEN",
             options=chrome_options
         )
         return driver
@@ -125,6 +124,9 @@ def main():
     if st.button("🚀 Start Scraping"):
         st.info("Starting scraping process...")
         driver = get_driver()
+        if driver is None:
+        st.error("❌ Scraper cannot continue without a working browser.")
+        return 
 
         all_data = []
         progress_bar = st.progress(0)
