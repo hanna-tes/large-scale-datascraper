@@ -26,12 +26,18 @@ warnings.filterwarnings('ignore')
 def get_driver():
     chrome_options = Options()
     chrome_options.add_argument("--headless")
+    chrome_options.add_argument("--disable-gpu")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
 
-    # Explicit binary location for Google Chrome on Streamlit Cloud
-    chrome_options.binary_location = "/usr/bin/google-chrome"
+    # ✅ Use Chromium instead of Google Chrome
+    chrome_path = shutil.which("chromium-browser") or shutil.which("chromium")
+    if chrome_path:
+        chrome_options.binary_location = chrome_path
+    else:
+        raise FileNotFoundError("Chromium not found in the environment.")
 
+    # Initialize ChromeDriver with Chromium binary
     service = ChromeService(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=chrome_options)
     return driver
