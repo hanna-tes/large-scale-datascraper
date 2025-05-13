@@ -107,9 +107,7 @@ def main():
         
         try:
             with sync_playwright() as p:
-                try:
-                    # 🔥 Switched to Firefox
-                    browser = p.firefox.launch(headless=True)
+                    browser = p.chromium.launch(headless=True)
                     page = browser.new_page()
                     
                     progress_bar = st.progress(0)
