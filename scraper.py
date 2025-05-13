@@ -18,11 +18,11 @@ import time
 import random
 import warnings
 import os
+import shutil
 
 # Suppress warnings
 warnings.filterwarnings('ignore')
 
-@st.cache_resource
 def get_driver():
     chrome_options = Options()
     chrome_options.add_argument("--headless")
@@ -30,14 +30,12 @@ def get_driver():
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
 
-    # ✅ Use Chromium instead of Google Chrome
     chrome_path = shutil.which("chromium-browser") or shutil.which("chromium")
     if chrome_path:
         chrome_options.binary_location = chrome_path
     else:
         raise FileNotFoundError("Chromium not found in the environment.")
 
-    # Initialize ChromeDriver with Chromium binary
     service = ChromeService(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=chrome_options)
     return driver
