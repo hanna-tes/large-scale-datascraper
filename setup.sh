@@ -10,5 +10,5 @@ apt-get update && apt-get install -y \
 # Install Python dependencies from requirements.txt
 pip install -r requirements.txt
 
-# Install Playwright browser binaries
-playwright install
+# Install Playwright browser binaries under current user context
+npx playwright install --with-deps
