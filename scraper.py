@@ -19,17 +19,30 @@ import random
 import warnings
 import os
 import shutil
+import subprocess
 
 # Suppress warnings
 warnings.filterwarnings('ignore')
 
+def install_chromium_if_needed():
+    if not shutil.which("chromium-browser") and not shutil.which("chromium") and not shutil.which("google-chrome"):
+        print("Chromium not found. Installing it now...")
+        subprocess.run(["apt-get", "update"], check=True)
+        subprocess.run(["apt-get", "install", "-y", "chromium-browser"], check=True)
+    else:
+        print("Chromium is already installed.")
+
 def get_driver():
+    # Step 1: Install Chromium if missing
+    install_chromium_if_needed()
+
+    # Step 2: Configure Chrome options
     chrome_options = Options()
     chrome_options.add_argument("--headless")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
 
-    # 🔍 Debug prints to check available browsers
+    # Step 3: Try locating the browser
     print("chromium-browser:", shutil.which("chromium-browser"))
     print("chromium:", shutil.which("chromium"))
     print("google-chrome:", shutil.which("google-chrome"))
@@ -46,6 +59,7 @@ def get_driver():
     else:
         raise FileNotFoundError("Neither Chromium nor Google Chrome found in the environment.")
 
+    # Step 4: Set up the driver
     service = ChromeService(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=chrome_options)
     return driver
