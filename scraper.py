@@ -7,34 +7,42 @@ Original file is located at
     https://colab.research.google.com/drive/1ZOnPx4o1sNiThSPpaCJ4trhoglvVScl0
 """
 import streamlit as st
-from playwright.sync_api import sync_playwright
 from bs4 import BeautifulSoup
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+from selenium.webdriver.common.by import By
+from webdriver_manager.chrome import ChromeDriverManager
 import pandas as pd
 import time
 import random
 import warnings
-import os  # Import the os module
 
 # Suppress warnings
 warnings.filterwarnings('ignore')
 
-def scrape_user_topics(page, username):
-    """Scrape user topics from Nairaland profile"""
-    page.goto(f"https://www.nairaland.com/ {username}/topics")
-    page.wait_for_timeout(3000)  # Wait for JavaScript to load
+@st.cache_resource
+def get_driver():
+    chrome_options = Options()
+    chrome_options.add_argument("--headless")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    driver = webdriver.Chrome(ChromeDriverManager().install(), options=chrome_options)
+    return driver
 
-    html = page.content()
-    soup = BeautifulSoup(html, 'html.parser')
+def scrape_user_topics(driver, username):
+    driver.get(f"https://www.nairaland.com/{username}/topics")
+    time.sleep(3)
 
+    soup = BeautifulSoup(driver.page_source, 'html.parser')
     topics = []
+
     for entry in soup.find_all('td', {'class': 'w'}):
         try:
             title = entry.find('b').text.strip()
             category = entry.find('a').text.strip()
             url = entry.find('a')['href']
 
-            # Scrape topic details
-            topic_data = scrape_topic_page(page, url)
+            topic_data = scrape_topic_page(driver, url)
 
             topics.append({
                 'Username': username,
@@ -49,14 +57,12 @@ def scrape_user_topics(page, username):
 
     return topics
 
-def scrape_topic_page(page, url):
-    """Scrape individual topic details including post content and metrics"""
+def scrape_topic_page(driver, url):
     try:
-        page.goto(url)
-        page.wait_for_timeout(3000)
+        driver.get(url)
+        time.sleep(3)
 
-        html = page.content()
-        soup = BeautifulSoup(html, 'html.parser')
+        soup = BeautifulSoup(driver.page_source, 'html.parser')
 
         # Extract original post content
         original_post = soup.select_one('td[id^="pb"] > div.narrow')
@@ -77,12 +83,12 @@ def scrape_topic_page(page, url):
                 replies.append(content)
 
         return {
-            'Post Content': post_content[:500],  # Limit to 500 chars
+            'Post Content': post_content[:500],
             'Shares': shares,
             'Likes': likes,
             'Replies': ' || '.join(replies)
         }
-    except Exception as e:
+    except Exception:
         return {
             'Post Content': '',
             'Shares': 0,
@@ -103,50 +109,24 @@ def main():
 
     if st.button("🚀 Start Scraping"):
         st.info("Starting scraping process...")
+        driver = get_driver()
 
-        try:
-            with sync_playwright() as p:
-                browser_type = p.chromium
-                executable_path = browser_type.executable_path
-                st.info(f"Chromium executable path: {executable_path}")  # Display the path
+        all_data = []
+        progress_bar = st.progress(0)
+        status_text = st.empty()
 
-                if not os.path.exists(executable_path):
-                    st.warning(
-                        "Playwright browser executable not found at the expected location. "
-                        "Please wait for the app to initialize or redeploy if the issue persists."
-                    )
-                    return
+        for i, username in enumerate(usernames):
+            status_text.text(f"Processing {username} ({i+1}/{len(usernames)})...")
+            try:
+                user_data = scrape_user_topics(driver, username)
+                all_data.extend(user_data)
+            except Exception as e:
+                st.error(f"❌ Error with {username}: {str(e)}")
 
-                browser = browser_type.launch(headless=True)
-                page = browser.new_page()
+            progress_bar.progress((i + 1) / len(usernames))
+            time.sleep(random.uniform(1.5, 3))  # Respect rate limits
 
-                progress_bar = st.progress(0)
-                status_text = st.empty()
-                all_data = []  # Initialize here
-
-                for i, username in enumerate(usernames):
-                    status_text.text(f"Processing {username} ({i + 1}/{len(usernames)})...")
-                    try:
-                        user_data = scrape_user_topics(page, username)
-                        all_data.extend(user_data)
-                    except Exception as e:
-                        st.error(f"❌ Error with {username}: {str(e)}")
-
-                    progress_bar.progress((i + 1) / len(usernames))
-                    time.sleep(random.uniform(2, 4))  # Respect rate limits
-
-                browser.close()
-
-        except Exception as inner_error:
-            st.error(f"🚨 Browser operation failed: {str(inner_error)}")
-            st.markdown("""
-            This usually means the browser didn't install correctly.
-
-            Try:
-            1. Redeploying the app
-            2. Clearing browser cache manually
-            """)
-            return
+        driver.quit()
 
         if all_data:
             df = pd.DataFrame(all_data)
