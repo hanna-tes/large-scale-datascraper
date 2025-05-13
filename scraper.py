@@ -101,41 +101,50 @@ def main():
         return
 
     if st.button("🚀 Start Scraping"):
-        st.info("Installing browser (first-time only)...")
-        
-        all_data = []  # Initialize early to prevent UnboundLocalError
-        
-        try:
-            with sync_playwright() as p:
-                browser = p.chromium.launch(headless=True)
-                page = browser.new_page()
+    st.info("Starting scraping process...")
 
-                progress_bar = st.progress(0)
-                status_text = st.empty()
+    try:
+        with sync_playwright() as p:
+            browser_type = p.chromium
+            executable_path = browser_type.executable_path
+            st.info(f"Chromium executable path: {executable_path}")  # Display the path
 
-                for i, username in enumerate(usernames):
-                    status_text.text(f"Processing {username} ({i+1}/{len(usernames)})...")
-                    try:
-                        user_data = scrape_user_topics(page, username)
-                        all_data.extend(user_data)
-                    except Exception as e:
-                        st.error(f"❌ Error with {username}: {str(e)}")
-                    
-                    progress_bar.progress((i + 1) / len(usernames))
-                    time.sleep(random.uniform(2, 4))  # Respect rate limits
+            if not os.path.exists(executable_path):
+                st.warning(
+                    "Playwright browser executable not found at the expected location. "
+                    "Please wait for the app to initialize or redeploy if the issue persists."
+                )
+                return
 
-                browser.close()
+            browser = browser_type.launch(headless=True)
+            page = browser.new_page()
 
-        except Exception as inner_error:
-            st.error(f"🚨 Browser operation failed: {str(inner_error)}")
-            st.markdown("""
-            This usually means the browser didn't install correctly.
+            progress_bar = st.progress(0)
+            status_text = st.empty()
 
-            Try:
-            1. Redeploying the app
-            2. Clearing browser cache manually
-            """)
-            return
+            for i, username in enumerate(usernames):
+                status_text.text(f"Processing {username} ({i + 1}/{len(usernames)})...")
+                try:
+                    user_data = scrape_user_topics(page, username)
+                    all_data.extend(user_data)
+                except Exception as e:
+                    st.error(f"❌ Error with {username}: {str(e)}")
+
+                progress_bar.progress((i + 1) / len(usernames))
+                time.sleep(random.uniform(2, 4))  # Respect rate limits
+
+            browser.close()
+
+    except Exception as inner_error:
+        st.error(f"🚨 Browser operation failed: {str(inner_error)}")
+        st.markdown("""
+        This usually means the browser didn't install correctly.
+
+        Try:
+        1. Redeploying the app
+        2. Clearing browser cache manually
+        """)
+        return
 
         if all_data:
             df = pd.DataFrame(all_data)
