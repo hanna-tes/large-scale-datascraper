@@ -11,4 +11,4 @@ apt-get update && apt-get install -y \
 pip install -r requirements.txt
 
 # Install Playwright browser binaries under current user context
-npx playwright install --with-deps
+python -m playwright install chromium firefox webkit
