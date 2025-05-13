@@ -24,18 +24,24 @@ import os
 # Suppress warnings
 warnings.filterwarnings('ignore')
 
+from selenium import webdriver
+from selenium.webdriver.chrome.options import Options
+
 def get_driver():
     chrome_options = Options()
-    chrome_options.add_argument('--headless=new')
+    chrome_options.add_argument('--headless')  # or '--headless=new' depending on version
     chrome_options.add_argument('--no-sandbox')
     chrome_options.add_argument('--disable-dev-shm-usage')
-    chrome_options.binary_location = '/usr/bin/google-chrome'
-    
+
     try:
-        driver = webdriver.Chrome(options=chrome_options)
+        # Replace the URL below with your actual remote WebDriver endpoint
+        driver = webdriver.Remote(
+            command_executor="https://chrome.browserless.io/webdriver?token=YOUR_API_TOKEN",
+            options=chrome_options
+        )
         return driver
     except Exception as e:
-        st.error(f"❌ Failed to launch browser: {str(e)}")
+        st.error(f"❌ Failed to launch remote browser: {str(e)}")
         return None
 
 def scrape_user_topics(driver, username):
