@@ -1,14 +1,26 @@
-# Update package lists and install system dependencies
+#!/bin/bash
+
+# Install system dependencies needed by Chromium
 apt-get update && apt-get install -y \
+    wget \
+    ca-certificates \
     libnss3 \
     libx11-xcb1 \
-    libxcb1 \
-    libasound2 \
+    libxcomposite1 \
+    libxdamage1 \
+    libxrandr2 \
     libatk-bridge2.0-0 \
-    libgtk-3-0
+    libgtk-3-0 \
+    libgbm1 \
+    libasound2 \
+    libxshmfence1 \
+    libxss1 \
+    libxtst6 \
+    lsb-release \
+    fonts-liberation \
+    libappindicator3-1 \
+    xdg-utils
 
-# Install Python dependencies from requirements.txt
+# Install Playwright and Chromium
 pip install -r requirements.txt
-
-# Install Playwright browser binaries under current user context
-python -m playwright install chromium firefox webkit
+playwright install chromium
