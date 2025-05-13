@@ -1,38 +1,22 @@
 #!/bin/bash
-# system dependencies needed for Chromium
 echo "Starting setup.sh"
-apt-get update && apt-get install -y \
-    libnss3 \
-    libx11-xcb1 \
-    libxcb1 \
-    libasound2 \
-    libatk-bridge2.0-0 \
-    libgtk-3-0 \
-    libxcomposite1 \
-    libxrandr2 \
-    libgbm1 \
-    libxdamage1 \
-    libxext6 \
-    libxfixes3 \
-    libx11-6 \
-    libxss1 \
-    libgconf-2-4 \
-    libnss3-tools \
-    fonts-liberation \
-    libappindicator1 \
-    libatk1.0-0 \
-    libatk-bridge2.0-0 \
-    libdrm2 \
-    xdg-utils \
-    wget \
-    ca-certificates \
-    fonts-ipafont-gothic
-echo "System dependencies installed"
-# install playwright dependencies
+
+# Update package lists
+apt-get update -y
+
+# Install Chromium system-wide (no sandbox for Streamlit Cloud)
+apt-get install -y chromium
+
+echo "Chromium installed system-wide"
+
+# Install Python dependencies
 pip install -r requirements.txt
 echo "Python dependencies installed"
-# install only Chromium 
-playwright install chromium
-echo "Chromium installed"
-echo "setup.sh completed"
+
+# Tell Playwright to use the system-installed Chromium
+export PLAYWRIGHT_BROWSERS_PATH=/usr/bin
+
+echo "PLAYWRIGHT_BROWSERS_PATH set to /usr/bin"
+
+echo "setup.sh completed successfully"
 exit 0
