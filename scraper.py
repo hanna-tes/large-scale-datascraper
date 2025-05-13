@@ -106,9 +106,9 @@ def main():
         all_data = []  # Initialize early to prevent UnboundLocalError
         
         try:
-        with sync_playwright() as p:
-            browser = p.chromium.launch(headless=True)
-            page = browser.new_page()
+            with sync_playwright() as p:  # ✅ Indented under try
+                browser = p.chromium.launch(headless=True)
+                page = browser.new_page()
             
             progress_bar = st.progress(0)
             status_text = st.empty()
@@ -126,19 +126,19 @@ def main():
             
             browser.close()
 
-    except Exception as inner_error:  # ✅ Fixed indentation
-        st.error(f"🚨 Browser operation failed: {str(inner_error)}")
-        st.markdown("""
-        This usually means the browser didn't install correctly.
-        
-        Try:
-        1. Redeploying the app
-        2. Clearing browser cache manually
-        """)
-        return
-        except Exception as launch_error:
-            st.error(f"💥 Critical browser launch error: {str(launch_error)}")
+        except Exception as inner_error:  # ✅ Fixed indentation
+            st.error(f"🚨 Browser operation failed: {str(inner_error)}")
+            st.markdown("""
+            This usually means the browser didn't install correctly.
+            
+            Try:
+            1. Redeploying the app
+            2. Clearing browser cache manually
+            """)
             return
+            except Exception as launch_error:
+                st.error(f"💥 Critical browser launch error: {str(launch_error)}")
+                return
 
         if all_data:
             df = pd.DataFrame(all_data)
