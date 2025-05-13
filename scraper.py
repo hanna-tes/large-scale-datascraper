@@ -24,15 +24,13 @@ warnings.filterwarnings('ignore')
 
 @st.cache_resource
 def get_driver():
-    chrome_options = webdriver.ChromeOptions()
+    chrome_options = Options()
     chrome_options.add_argument("--headless")
     chrome_options.add_argument("--no-sandbox")
     chrome_options.add_argument("--disable-dev-shm-usage")
 
-     #Explicitly set path to Google Chrome binary
-    chrome_path = "/usr/bin/google-chrome"
-    if os.path.exists(chrome_path):
-        chrome_options.binary_location = chrome_path
+    # Explicit binary location for Google Chrome on Streamlit Cloud
+    chrome_options.binary_location = "/usr/bin/google-chrome"
 
     service = ChromeService(ChromeDriverManager().install())
     driver = webdriver.Chrome(service=service, options=chrome_options)
