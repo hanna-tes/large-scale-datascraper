@@ -1,4 +1,6 @@
+#!/bin/bash
 # system dependencies needed for Chromium
+echo "Starting setup.sh"
 apt-get update && apt-get install -y \
     libnss3 \
     libx11-xcb1 \
@@ -25,9 +27,11 @@ apt-get update && apt-get install -y \
     wget \
     ca-certificates \
     fonts-ipafont-gothic
-
+echo "System dependencies installed"
 # install playwright dependencies
 pip install -r requirements.txt
-
+echo "Python dependencies installed"
 # install only Chromium 
 playwright install chromium
+echo "Chromium installed"
+echo "setup.sh completed"
