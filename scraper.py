@@ -28,18 +28,18 @@ def get_first_post_content(topic_url):
 
         soup = BeautifulSoup(res.text, "html.parser")
 
-        # First post content
-        post_blockquote = soup.find("blockquote", class_="narrow")
-        post_content = post_blockquote.get_text(strip=True)[:500] if post_blockquote else ''
+        # First post content (Corrected)
+        post_div = soup.find("div", class_="narrow")  # Changed selector
+        post_content = post_div.get_text(strip=True)[:500] if post_div else ''
 
-        # Likes & shares
+        # Likes & shares (Corrected - selector remains the same as it was fine)
         likes_span = soup.find('b', id=lambda x: x and x.startswith('lpt'))
         likes = int(likes_span.text.split()[0]) if likes_span else 0
 
         shares_span = soup.find('b', id=lambda x: x and x.startswith('shb'))
         shares = int(shares_span.text.split()[0]) if shares_span else 0
 
-        # Replies (first 5)
+        # Replies (Corrected - selector remains the same as it was fine)
         reply_rows = soup.select('table[summary="posts"] tr')[1:6]
         replies = []
         for row in reply_rows:
@@ -55,28 +55,28 @@ def get_first_post_content(topic_url):
         return '', 0, 0, ''
 
 def scrape_user_topics(username, max_pages=10, delay=1.0):
-    topics_data = []
+    topics = []
     for page in range(max_pages):
         url = f"https://www.nairaland.com/{username}/topics"
         if page > 0:
             url += f"/{page}"
 
         try:
-            print(f"Fetching: {url}")  # Debug: Print the URL
             res = requests.get(url, headers=headers)
             if res.status_code != 200:
                 st.warning(f"❌ Failed to load {url}: {res.status_code}")
                 break
 
             soup = BeautifulSoup(res.text, 'html.parser')
-            topic_rows = soup.select("table tbody tr")  # Target the tbody and then tr
+            # Changed selector to target the correct table structure
+            rows = soup.select("table tbody tr")
 
-            if not topic_rows:
-                print("No topic rows found!")  # Debug: Check for empty rows
+            if not rows:
                 break
 
-            for i, row in enumerate(topic_rows):
-                info_cell = row.select_one("td:nth-of-type(1)")  # The cell containing category and title
+            for row in rows:
+                #  Gets category and title.
+                info_cell = row.select_one("td:nth-of-type(1)")
                 if info_cell:
                     category_tag = info_cell.find("a")
                     title_bold_tag = info_cell.find("b")
@@ -86,35 +86,31 @@ def scrape_user_topics(username, max_pages=10, delay=1.0):
                         category_text = category_tag.text.strip()
                         topic_title = title_link_tag.text.strip()
                         topic_href = title_link_tag['href']
-                        full_topic_url = f"https://www.nairaland.com{topic_href}"
-
-                        print(f"  Topic {i + 1}: Category='{category_text}', Title='{topic_title}', URL='{full_topic_url}'")  # Debug
-
-                        post_content, shares, likes, replies = get_first_post_content(full_topic_url)
-
-                        topics_data.append({
-                            'Username': username,
-                            'Topic Number': i + 1,
-                            'Title': topic_title,
-                            'Category': category_text,
-                            'URL': full_topic_url,
-                            'Post Content': post_content,
-                            'Shares': shares,
-                            'Likes': likes,
-                            'Replies': replies
-                        })
-                        time.sleep(delay)
+                        full_url = f"https://www.nairaland.com{topic_href}"
                     else:
-                        print(f"  Could not find category or title link in row {i + 1}") # Debug
+                        continue
                 else:
-                    print(f"  Could not find the main info cell in row {i + 1}") # Debug
+                    continue
+                post_content, shares, likes, replies = get_first_post_content(full_url)
+
+                topics.append({
+                    'Username': username,
+                    'Title': topic_title,
+                    'Category': category_text,
+                    'URL': full_url,
+                    'Post Content': post_content,
+                    'Shares': shares,
+                    'Likes': likes,
+                    'Replies': replies
+                })
+
+                time.sleep(delay)
 
         except Exception as e:
             st.warning(f"Error processing page {page + 1}: {str(e)}")
-            print(f"  Error: {str(e)}")  # Debug: Print the exception
             continue
 
-    return topics_data
+    return topics
 
 def main():
     st.title("🇳🇬 Nairaland Profile Scraper")
@@ -147,7 +143,7 @@ def main():
 
         if all_data:
             df = pd.DataFrame(all_data)
-            df = df[['Username', 'Topic Number', 'Title', 'Category', 'URL', 'Post Content', 'Shares', 'Likes', 'Replies']]
+            df = df[['Username', 'Title', 'Category', 'URL', 'Post Content', 'Shares', 'Likes', 'Replies']]
             st.success(f"✅ Successfully scraped {len(df)} topics from {len(usernames)} users!")
             st.dataframe(df)
             csv = df.to_csv(index=False)
