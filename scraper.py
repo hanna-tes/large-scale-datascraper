@@ -291,11 +291,12 @@ def scrape_user_posts(username, pages=10, delay=1):
                             if not content_cell:
                                 i += 1
                                 continue
-                            # Extract main post content (from <b> inside <blockquote>)
-                            narrow_div = content_cell.find("div", class_="narrow")
-                            main_post_blockquote = narrow_div.find("blockquote") if narrow_div else None
-                            main_post_bold = main_post_blockquote.find("b") if main_post_blockquote else None
-                            main_post_text = clean_text(main_post_bold.get_text(separator=" ", strip=True)) if main_post_bold else ""
+                            # Extract post text
+                            content_div = content_cell.find("div", class_="narrow")
+                            if content_div:
+                                post_text = clean_text(content_div.get_text(separator=" ", strip=True))
+                            else:
+                                post_text = clean_text(content_cell.get_text(strip=True))
                             # Extract replies (from the next <tr> tag)
                             reply_texts = []
                             reply_row = rows[i+2] if i+2 < len(rows) else None
