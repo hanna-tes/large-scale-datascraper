@@ -29,17 +29,17 @@ def get_first_post_content(topic_url):
         soup = BeautifulSoup(res.text, "html.parser")
 
         # First post content (Corrected)
-        post_div = soup.find("div", class_="narrow")  # Changed selector
-        post_content = post_div.get_text(strip=True)[:500] if post_div else ''
+        post_blockquote = soup.find("blockquote", class_="narrow")
+        post_content = post_blockquote.get_text(strip=True)[:500] if post_blockquote else ''
 
-        # Likes & shares (Corrected - selector remains the same as it was fine)
+        # Likes & shares (Corrected)
         likes_span = soup.find('b', id=lambda x: x and x.startswith('lpt'))
         likes = int(likes_span.text.split()[0]) if likes_span else 0
 
         shares_span = soup.find('b', id=lambda x: x and x.startswith('shb'))
         shares = int(shares_span.text.split()[0]) if shares_span else 0
 
-        # Replies (Corrected - selector remains the same as it was fine)
+        # Replies (Corrected)
         reply_rows = soup.select('table[summary="posts"] tr')[1:6]
         replies = []
         for row in reply_rows:
@@ -68,34 +68,27 @@ def scrape_user_topics(username, max_pages=10, delay=1.0):
                 break
 
             soup = BeautifulSoup(res.text, 'html.parser')
-            # Changed selector to target the correct table structure
-            rows = soup.select("table tbody tr")
+            rows = soup.select("table tr")[1:]
 
             if not rows:
                 break
 
             for row in rows:
-                #  Gets category and title.
-                info_cell = row.select_one("td:nth-of-type(1)")
-                if info_cell:
-                    category_tag = info_cell.find("a")
-                    title_bold_tag = info_cell.find("b")
-                    title_link_tag = title_bold_tag.find("a") if title_bold_tag else None
-
-                    if category_tag and title_link_tag:
-                        category_text = category_tag.text.strip()
-                        topic_title = title_link_tag.text.strip()
-                        topic_href = title_link_tag['href']
-                        full_url = f"https://www.nairaland.com{topic_href}"
-                    else:
-                        continue
-                else:
+                link = row.select_one("a[href^='/']")
+                if not link:
                     continue
+
+                title = link.text.strip()
+                href = link['href']
+                full_url = f"https://www.nairaland.com{href}"
+                category = row.select_one("a")
+                category_text = category.text.strip() if category else ''
+
                 post_content, shares, likes, replies = get_first_post_content(full_url)
 
                 topics.append({
                     'Username': username,
-                    'Title': topic_title,
+                    'Title': title,
                     'Category': category_text,
                     'URL': full_url,
                     'Post Content': post_content,
