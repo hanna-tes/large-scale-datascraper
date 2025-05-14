@@ -8,50 +8,40 @@ Original file is located at
 """
 import streamlit as st
 from bs4 import BeautifulSoup
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.common.by import By
-from webdriver_manager.chrome import ChromeDriverManager
-from selenium.webdriver.chrome.service import Service as ChromeService
 import pandas as pd
 import time
 import random
 import warnings
-import os
-#import shutil
-#import subprocess
+import requests
+import json
 
-# Suppress warnings
 warnings.filterwarnings('ignore')
 
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
+# Load token from secrets
+BROWSERLESS_TOKEN = st.secrets["BROWSERLESS_TOKEN"]
+BROWSERLESS_URL = f"https://chrome.browserless.io/playwright?token={BROWSERLESS_TOKEN}"
 
-def get_driver():
-    chrome_options = Options()
-    chrome_options.add_argument("--headless")
-    chrome_options.add_argument("--no-sandbox")
-    chrome_options.add_argument("--disable-dev-shm-usage")
-
-    token = st.secrets["BROWSERLESS_TOKEN"]
-    webdriver_url = f"https://chrome.browserless.io/webdriver?token={token}"
-    st.write("🌐 WebDriver URL:", webdriver_url)
-
+def run_playwright_script(url):
+    payload = {
+        "url": url,
+        "gotoOptions": {"waitUntil": "networkidle"},
+        "context": {"viewport": {"width": 1280, "height": 800}},
+        "waitFor": 1500
+    }
     try:
-        driver = webdriver.Remote(
-            command_executor=webdriver_url,
-            options=chrome_options
-        )
-        return driver
-    except Exception as e:
-        st.error(f"❌ Failed to launch remote browser: {str(e)}")
+        response = requests.post(BROWSERLESS_URL, headers={"Content-Type": "application/json"}, data=json.dumps(payload))
+        response.raise_for_status()
+        return response.text
+    except requests.RequestException as e:
+        st.error(f"❌ Failed to load {url}: {e}")
         return None
-        
-def scrape_user_topics(driver, username):
-    driver.get(f"https://www.nairaland.com/{username}/topics")
-    time.sleep(3)
 
-    soup = BeautifulSoup(driver.page_source, 'html.parser')
+def scrape_user_topics(username):
+    html = run_playwright_script(f"https://www.nairaland.com/{username}/topics")
+    if not html:
+        return []
+
+    soup = BeautifulSoup(html, 'html.parser')
     topics = []
 
     for entry in soup.find_all('td', {'class': 'w'}):
@@ -59,9 +49,9 @@ def scrape_user_topics(driver, username):
             title = entry.find('b').text.strip()
             category = entry.find('a').text.strip()
             url = entry.find('a')['href']
-
-            topic_data = scrape_topic_page(driver, url)
-
+            if not url.startswith("http"):
+                url = f"https://www.nairaland.com{url}"
+            topic_data = scrape_topic_page(url)
             topics.append({
                 'Username': username,
                 'Title': title,
@@ -72,41 +62,11 @@ def scrape_user_topics(driver, username):
         except Exception as e:
             st.warning(f"Error processing topic: {str(e)}")
             continue
-
     return topics
 
-def scrape_topic_page(driver, url):
-    try:
-        driver.get(url)
-        time.sleep(3)
-
-        soup = BeautifulSoup(driver.page_source, 'html.parser')
-
-        # Extract original post content
-        original_post = soup.select_one('td[id^="pb"] > div.narrow')
-        post_content = original_post.get_text(separator='\n', strip=True) if original_post else ''
-
-        # Extract likes/shares
-        stats = soup.find_all('b', id=lambda x: x and x.startswith(('lpt', 'shb')))
-        likes = next((int(stat.text.split()[0]) for stat in stats if 'lpt' in stat['id']), 0)
-        shares = next((int(stat.text.split()[0]) for stat in stats if 'shb' in stat['id']), 0)
-
-        # Extract first 5 replies
-        reply_rows = soup.select('table[summary="posts"] tr')[1:6]
-        replies = []
-        for row in reply_rows:
-            post_body = row.find('td', {'class': 'postbody'})
-            if post_body:
-                content = post_body.get_text(strip=True)
-                replies.append(content)
-
-        return {
-            'Post Content': post_content[:500],
-            'Shares': shares,
-            'Likes': likes,
-            'Replies': ' || '.join(replies)
-        }
-    except Exception:
+def scrape_topic_page(url):
+    html = run_playwright_script(url)
+    if not html:
         return {
             'Post Content': '',
             'Shares': 0,
@@ -114,8 +74,31 @@ def scrape_topic_page(driver, url):
             'Replies': ''
         }
 
+    soup = BeautifulSoup(html, 'html.parser')
+    original_post = soup.select_one('td[id^="pb"] > div.narrow')
+    post_content = original_post.get_text(separator='\n', strip=True) if original_post else ''
+
+    stats = soup.find_all('b', id=lambda x: x and x.startswith(('lpt', 'shb')))
+    likes = next((int(stat.text.split()[0]) for stat in stats if 'lpt' in stat['id']), 0)
+    shares = next((int(stat.text.split()[0]) for stat in stats if 'shb' in stat['id']), 0)
+
+    reply_rows = soup.select('table[summary="posts"] tr')[1:6]
+    replies = []
+    for row in reply_rows:
+        post_body = row.find('td', {'class': 'postbody'})
+        if post_body:
+            content = post_body.get_text(strip=True)
+            replies.append(content)
+
+    return {
+        'Post Content': post_content[:500],
+        'Shares': shares,
+        'Likes': likes,
+        'Replies': ' || '.join(replies)
+    }
+
 def main():
-    st.title("🇳🇬 Nairaland Profile Scraper")
+    st.title("🇳🇬 Nairaland Profile Scraper (Playwright API)")
     st.markdown("Enter up to 10 usernames separated by commas (e.g., elusive001,slavaukraini)")
 
     usernames = st.text_input("Usernames (max 10)").split(',')
@@ -127,11 +110,6 @@ def main():
 
     if st.button("🚀 Start Scraping"):
         st.info("Starting scraping process...")
-        driver = get_driver()
-        if driver is None:
-            st.error("❌ Scraper cannot continue without a working browser.")
-            return
-
         all_data = []
         progress_bar = st.progress(0)
         status_text = st.empty()
@@ -139,15 +117,12 @@ def main():
         for i, username in enumerate(usernames):
             status_text.text(f"Processing {username} ({i+1}/{len(usernames)})...")
             try:
-                user_data = scrape_user_topics(driver, username)
+                user_data = scrape_user_topics(username)
                 all_data.extend(user_data)
             except Exception as e:
                 st.error(f"❌ Error with {username}: {str(e)}")
-
             progress_bar.progress((i + 1) / len(usernames))
-            time.sleep(random.uniform(1.5, 3))  # Respect rate limits
-
-        driver.quit()
+            time.sleep(random.uniform(1.5, 3))
 
         if all_data:
             df = pd.DataFrame(all_data)
