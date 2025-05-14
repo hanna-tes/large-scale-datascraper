@@ -28,18 +28,18 @@ def get_first_post_content(topic_url):
 
         soup = BeautifulSoup(res.text, "html.parser")
 
-        # First post content (Corrected)
+        # First post content
         post_blockquote = soup.find("blockquote", class_="narrow")
         post_content = post_blockquote.get_text(strip=True)[:500] if post_blockquote else ''
 
-        # Likes & shares (Corrected)
+        # Likes & shares
         likes_span = soup.find('b', id=lambda x: x and x.startswith('lpt'))
         likes = int(likes_span.text.split()[0]) if likes_span else 0
 
         shares_span = soup.find('b', id=lambda x: x and x.startswith('shb'))
         shares = int(shares_span.text.split()[0]) if shares_span else 0
 
-        # Replies (Corrected)
+        # Replies (first 5)
         reply_rows = soup.select('table[summary="posts"] tr')[1:6]
         replies = []
         for row in reply_rows:
@@ -55,7 +55,7 @@ def get_first_post_content(topic_url):
         return '', 0, 0, ''
 
 def scrape_user_topics(username, max_pages=10, delay=1.0):
-    topics = []
+    topics_data = []
     for page in range(max_pages):
         url = f"https://www.nairaland.com/{username}/topics"
         if page > 0:
@@ -68,42 +68,41 @@ def scrape_user_topics(username, max_pages=10, delay=1.0):
                 break
 
             soup = BeautifulSoup(res.text, 'html.parser')
-            rows = soup.select("table tr")[1:]
+            topic_rows = soup.select("table tr")[1:]
 
-            if not rows:
+            if not topic_rows:
                 break
 
-            for row in rows:
-                link = row.select_one("a[href^='/']")
-                if not link:
-                    continue
+            for i, row in enumerate(topic_rows):
+                link_tag = row.select_one("td:nth-child(2) a[href^='/']")  # Target the topic title link
+                category_tag = row.select_one("td:nth-child(1) a")      # Target the category link
 
-                title = link.text.strip()
-                href = link['href']
-                full_url = f"https://www.nairaland.com{href}"
-                category = row.select_one("a")
-                category_text = category.text.strip() if category else ''
+                if link_tag and category_tag:
+                    topic_title = link_tag.text.strip()
+                    topic_href = link_tag['href']
+                    full_topic_url = f"https://www.nairaland.com{topic_href}"
+                    category_text = category_tag.text.strip()
 
-                post_content, shares, likes, replies = get_first_post_content(full_url)
+                    post_content, shares, likes, replies = get_first_post_content(full_topic_url)
 
-                topics.append({
-                    'Username': username,
-                    'Title': title,
-                    'Category': category_text,
-                    'URL': full_url,
-                    'Post Content': post_content,
-                    'Shares': shares,
-                    'Likes': likes,
-                    'Replies': replies
-                })
-
-                time.sleep(delay)
+                    topics_data.append({
+                        'Username': username,
+                        'Topic Number': i + 1,  # Add a topic number
+                        'Title': topic_title,  # This is now the actual topic title
+                        'Category': category_text,
+                        'URL': full_topic_url,
+                        'Post Content': post_content,
+                        'Shares': shares,
+                        'Likes': likes,
+                        'Replies': replies
+                    })
+                    time.sleep(delay)
 
         except Exception as e:
             st.warning(f"Error processing page {page + 1}: {str(e)}")
             continue
 
-    return topics
+    return topics_data
 
 def main():
     st.title("🇳🇬 Nairaland Profile Scraper")
@@ -136,7 +135,7 @@ def main():
 
         if all_data:
             df = pd.DataFrame(all_data)
-            df = df[['Username', 'Title', 'Category', 'URL', 'Post Content', 'Shares', 'Likes', 'Replies']]
+            df = df[['Username', 'Topic Number', 'Title', 'Category', 'URL', 'Post Content', 'Shares', 'Likes', 'Replies']]
             st.success(f"✅ Successfully scraped {len(df)} topics from {len(usernames)} users!")
             st.dataframe(df)
             csv = df.to_csv(index=False)
