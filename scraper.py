@@ -35,7 +35,7 @@ def get_driver():
 
     try:
         driver = webdriver.Remote(
-            command_executor=f"https://chrome.browserless.io/webdriver?token=2SIxXh7Fp6lAXEx29f20a40520e72e866af5ff4a16339a007",
+            command_executor=f"https://chrome.browserless.io/webdriver?token=BROWSERLESS_TOKEN",
             options=chrome_options
         )
         return driver
