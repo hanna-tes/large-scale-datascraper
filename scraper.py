@@ -98,14 +98,18 @@ def init_db():
     return conn
 
 # Helper functions for scraping
-def get_headers():
-    return {
+def get_headers(referer=None):
+    headers = {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.5',
         'Connection': 'keep-alive',
         'Upgrade-Insecure-Requests': '1',
+        'Accept-Encoding': 'gzip, deflate, br',  # Support for compression [[7]]
     }
+    if referer:
+        headers['Referer'] = referer  # Dynamically set Referer for legitimacy [[5]]
+    return headers
 
 def clean_text(text):
     if not text:
@@ -372,29 +376,26 @@ def scrape_user_posts(username, pages=10, delay=1):
         'registration_date': registration_date,
         'post_count': len(posts_data)
     }
-def scrape_multiple_users(usernames, pages_per_user=10, max_workers=5, delay=1):
+def scrape_multiple_users(usernames, pages_per_user=10, max_workers=5, delay=1, global_delay=2):
     results = []
-    
     with st.spinner(f"Scraping data for {len(usernames)} users..."):
         progress_bar = st.progress(0)
-        
         # Use a wrapper to isolate Streamlit context
         def worker(username):
             try:
+                # Add jitter to the global delay to make request timing less predictable
+                time.sleep(global_delay + random.uniform(-0.5, 0.5))  # Jitter ±0.5 seconds
                 return scrape_user_posts(username, pages_per_user, delay)
             except Exception as e:
                 st.error(f"Error processing {username}: {str(e)}")
                 return None
-        
         with concurrent.futures.ThreadPoolExecutor(max_workers=max_workers) as executor:
             futures = {executor.submit(worker, username): username for username in usernames}
-            
             for i, future in enumerate(concurrent.futures.as_completed(futures)):
                 result = future.result()
                 if result:
                     results.append(result)
                 progress_bar.progress((i + 1) / len(usernames))
-    
     return results
 
 def save_to_database(data, conn):
