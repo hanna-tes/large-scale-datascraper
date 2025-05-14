@@ -99,16 +99,22 @@ def init_db():
 
 # Helper functions for scraping
 def get_headers(referer=None):
+    user_agents = [
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/14.1.1 Safari/605.1.15",
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/88.0.4324.96 Safari/537.36"
+    ]
     headers = {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'User-Agent': random.choice(user_agents),  # Rotate User-Agent
         'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
         'Accept-Language': 'en-US,en;q=0.5',
         'Connection': 'keep-alive',
         'Upgrade-Insecure-Requests': '1',
-        'Accept-Encoding': 'gzip, deflate, br',  # Support for compression [[7]]
+        'Accept-Encoding': 'gzip, deflate, br',  # Support for compression
+        'Cache-Control': 'no-cache',  # Prevent caching
     }
     if referer:
-        headers['Referer'] = referer  # Dynamically set Referer for legitimacy [[5]]
+        headers['Referer'] = referer  # Dynamically set Referer for legitimacy
     return headers
 
 def clean_text(text):
