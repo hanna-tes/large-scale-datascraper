@@ -29,20 +29,24 @@ from selenium.webdriver.chrome.options import Options
 
 def get_driver():
     chrome_options = Options()
-    chrome_options.add_argument('--headless')
-    chrome_options.add_argument('--no-sandbox')
-    chrome_options.add_argument('--disable-dev-shm-usage')
+    chrome_options.add_argument("--headless")
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+
+    token = st.secrets["BROWSERLESS_TOKEN"]
+    webdriver_url = f"https://chrome.browserless.io/webdriver?token={token}"
+    st.write("🌐 WebDriver URL:", webdriver_url)
 
     try:
         driver = webdriver.Remote(
-            command_executor=f"https://chrome.browserless.io/webdriver?token=BROWSERLESS_TOKEN",
+            command_executor=webdriver_url,
             options=chrome_options
         )
         return driver
     except Exception as e:
         st.error(f"❌ Failed to launch remote browser: {str(e)}")
         return None
-
+        
 def scrape_user_topics(driver, username):
     driver.get(f"https://www.nairaland.com/{username}/topics")
     time.sleep(3)
