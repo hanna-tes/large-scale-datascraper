@@ -28,22 +28,26 @@ def get_first_post_content(topic_url):
 
         soup = BeautifulSoup(res.text, "html.parser")
 
-        # First post
-        post_div = soup.find("div", class_="narrow")
-        post_content = post_div.get_text(strip=True)[:500] if post_div else ''
+        # First post content (Corrected)
+        post_blockquote = soup.find("blockquote", class_="narrow")
+        post_content = post_blockquote.get_text(strip=True)[:500] if post_blockquote else ''
 
-        # Likes & shares
-        stats = soup.find_all('b', id=lambda x: x and x.startswith(('lpt', 'shb')))
-        likes = next((int(stat.text.split()[0]) for stat in stats if 'lpt' in stat['id']), 0)
-        shares = next((int(stat.text.split()[0]) for stat in stats if 'shb' in stat['id']), 0)
+        # Likes & shares (Corrected)
+        likes_span = soup.find('b', id=lambda x: x and x.startswith('lpt'))
+        likes = int(likes_span.text.split()[0]) if likes_span else 0
 
-        # Replies (first 5)
+        shares_span = soup.find('b', id=lambda x: x and x.startswith('shb'))
+        shares = int(shares_span.text.split()[0]) if shares_span else 0
+
+        # Replies (Corrected)
         reply_rows = soup.select('table[summary="posts"] tr')[1:6]
         replies = []
         for row in reply_rows:
-            post_body = row.find('td', {'class': 'postbody'})
-            if post_body:
-                replies.append(post_body.get_text(strip=True))
+            post_body_cell = row.find('td', class_='postbody')
+            if post_body_cell:
+                reply_div = post_body_cell.find('div', class_='narrow')
+                if reply_div:
+                    replies.append(reply_div.get_text(strip=True))
 
         return post_content, shares, likes, ' || '.join(replies)
 
