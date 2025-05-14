@@ -13,89 +13,93 @@ import time
 import random
 import warnings
 import requests
-import json
 
 warnings.filterwarnings('ignore')
 
-# Load token from secrets
-BROWSERLESS_TOKEN = st.secrets["BROWSERLESS_TOKEN"]
-BROWSERLESS_URL = f"https://chrome.browserless.io/playwright?token={BROWSERLESS_TOKEN}"
+headers = {
+    "User-Agent": "Mozilla/5.0"
+}
 
-def run_playwright_script(url):
-    payload = {
-        "url": url,
-        "gotoOptions": {"waitUntil": "networkidle"},
-        "context": {"viewport": {"width": 1280, "height": 800}},
-        "waitFor": 1500
-    }
+def get_first_post_content(topic_url):
     try:
-        response = requests.post(BROWSERLESS_URL, headers={"Content-Type": "application/json"}, data=json.dumps(payload))
-        response.raise_for_status()
-        return response.text
-    except requests.RequestException as e:
-        st.error(f"❌ Failed to load {url}: {e}")
-        return None
+        res = requests.get(topic_url, headers=headers)
+        if res.status_code != 200:
+            return '', 0, 0, ''
 
-def scrape_user_topics(username):
-    html = run_playwright_script(f"https://www.nairaland.com/{username}/topics")
-    if not html:
-        return []
+        soup = BeautifulSoup(res.text, "html.parser")
 
-    soup = BeautifulSoup(html, 'html.parser')
+        # First post
+        post_div = soup.find("div", class_="narrow")
+        post_content = post_div.get_text(strip=True)[:500] if post_div else ''
+
+        # Likes & shares
+        stats = soup.find_all('b', id=lambda x: x and x.startswith(('lpt', 'shb')))
+        likes = next((int(stat.text.split()[0]) for stat in stats if 'lpt' in stat['id']), 0)
+        shares = next((int(stat.text.split()[0]) for stat in stats if 'shb' in stat['id']), 0)
+
+        # Replies (first 5)
+        reply_rows = soup.select('table[summary="posts"] tr')[1:6]
+        replies = []
+        for row in reply_rows:
+            post_body = row.find('td', {'class': 'postbody'})
+            if post_body:
+                replies.append(post_body.get_text(strip=True))
+
+        return post_content, shares, likes, ' || '.join(replies)
+
+    except Exception as e:
+        return '', 0, 0, ''
+
+def scrape_user_topics(username, max_pages=10, delay=1.0):
     topics = []
+    for page in range(max_pages):
+        url = f"https://www.nairaland.com/{username}/topics"
+        if page > 0:
+            url += f"/{page}"
 
-    for entry in soup.find_all('td', {'class': 'w'}):
         try:
-            title = entry.find('b').text.strip()
-            category = entry.find('a').text.strip()
-            url = entry.find('a')['href']
-            if not url.startswith("http"):
-                url = f"https://www.nairaland.com{url}"
-            topic_data = scrape_topic_page(url)
-            topics.append({
-                'Username': username,
-                'Title': title,
-                'Category': category,
-                'URL': url,
-                **topic_data
-            })
+            res = requests.get(url, headers=headers)
+            if res.status_code != 200:
+                st.warning(f"❌ Failed to load {url}: {res.status_code}")
+                break
+
+            soup = BeautifulSoup(res.text, 'html.parser')
+            rows = soup.select("table tr")[1:]
+
+            if not rows:
+                break
+
+            for row in rows:
+                link = row.select_one("a[href^='/']")
+                if not link:
+                    continue
+
+                title = link.text.strip()
+                href = link['href']
+                full_url = f"https://www.nairaland.com{href}"
+                category = row.select_one("a")
+                category_text = category.text.strip() if category else ''
+
+                post_content, shares, likes, replies = get_first_post_content(full_url)
+
+                topics.append({
+                    'Username': username,
+                    'Title': title,
+                    'Category': category_text,
+                    'URL': full_url,
+                    'Post Content': post_content,
+                    'Shares': shares,
+                    'Likes': likes,
+                    'Replies': replies
+                })
+
+                time.sleep(delay)
+
         except Exception as e:
-            st.warning(f"Error processing topic: {str(e)}")
+            st.warning(f"Error processing page {page + 1}: {str(e)}")
             continue
+
     return topics
-
-def scrape_topic_page(url):
-    html = run_playwright_script(url)
-    if not html:
-        return {
-            'Post Content': '',
-            'Shares': 0,
-            'Likes': 0,
-            'Replies': ''
-        }
-
-    soup = BeautifulSoup(html, 'html.parser')
-    original_post = soup.select_one('td[id^="pb"] > div.narrow')
-    post_content = original_post.get_text(separator='\n', strip=True) if original_post else ''
-
-    stats = soup.find_all('b', id=lambda x: x and x.startswith(('lpt', 'shb')))
-    likes = next((int(stat.text.split()[0]) for stat in stats if 'lpt' in stat['id']), 0)
-    shares = next((int(stat.text.split()[0]) for stat in stats if 'shb' in stat['id']), 0)
-
-    reply_rows = soup.select('table[summary="posts"] tr')[1:6]
-    replies = []
-    for row in reply_rows:
-        post_body = row.find('td', {'class': 'postbody'})
-        if post_body:
-            content = post_body.get_text(strip=True)
-            replies.append(content)
-
-    return {
-        'Post Content': post_content[:500],
-        'Shares': shares,
-        'Likes': likes,
-        'Replies': ' || '.join(replies)
-    }
 
 def main():
     st.title("🇳🇬 Nairaland Profile Scraper")
@@ -103,6 +107,8 @@ def main():
 
     usernames = st.text_input("Usernames (max 10)").split(',')
     usernames = [u.strip() for u in usernames if u.strip()]
+
+    max_pages = st.number_input("Max pages per user", min_value=1, max_value=20, value=10)
 
     if len(usernames) > 10:
         st.error("Please enter no more than 10 usernames")
@@ -117,7 +123,7 @@ def main():
         for i, username in enumerate(usernames):
             status_text.text(f"Processing {username} ({i+1}/{len(usernames)})...")
             try:
-                user_data = scrape_user_topics(username)
+                user_data = scrape_user_topics(username, max_pages=max_pages)
                 all_data.extend(user_data)
             except Exception as e:
                 st.error(f"❌ Error with {username}: {str(e)}")
