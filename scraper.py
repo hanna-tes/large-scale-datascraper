@@ -382,7 +382,7 @@ def scrape_user_posts(username, pages=10, delay=1):
         'registration_date': registration_date,
         'post_count': len(posts_data)
     }
-def scrape_multiple_users(usernames, pages_per_user=10, max_workers=3, delay=1, global_delay=5):
+def scrape_multiple_users(usernames, pages_per_user=10, max_workers=2, delay=1, global_delay=5):
     results = []
     with st.spinner(f"Scraping data for {len(usernames)} users..."):
         progress_bar = st.progress(0)
@@ -1019,7 +1019,7 @@ def main():
         with col1:
             pages_per_user = st.number_input("Pages per user", min_value=1, max_value=50, value=10)
         with col2:
-            max_workers = st.number_input("Concurrent workers", min_value=1, max_value=10, value=5)
+            max_workers = st.number_input("Concurrent workers", min_value=1, max_value=10, value=3)
         with col3:
             delay = st.number_input("Delay between requests (seconds)", min_value=0.5, max_value=5.0, value=1.0, step=0.5)
         
