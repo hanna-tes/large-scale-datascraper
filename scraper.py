@@ -62,44 +62,56 @@ def scrape_user_topics(username, max_pages=10, delay=1.0):
             url += f"/{page}"
 
         try:
+            print(f"Fetching: {url}")  # Debug: Print the URL
             res = requests.get(url, headers=headers)
             if res.status_code != 200:
                 st.warning(f"❌ Failed to load {url}: {res.status_code}")
                 break
 
             soup = BeautifulSoup(res.text, 'html.parser')
-            topic_rows = soup.select("table tr")[1:]
+            topic_rows = soup.select("table tbody tr")  # Target the tbody and then tr
 
             if not topic_rows:
+                print("No topic rows found!")  # Debug: Check for empty rows
                 break
 
             for i, row in enumerate(topic_rows):
-                link_tag = row.select_one("td:nth-child(2) a[href^='/']")  # Target the topic title link
-                category_tag = row.select_one("td:nth-child(1) a")      # Target the category link
+                info_cell = row.select_one("td:nth-of-type(1)")  # The cell containing category and title
+                if info_cell:
+                    category_tag = info_cell.find("a")
+                    title_bold_tag = info_cell.find("b")
+                    title_link_tag = title_bold_tag.find("a") if title_bold_tag else None
 
-                if link_tag and category_tag:
-                    topic_title = link_tag.text.strip()
-                    topic_href = link_tag['href']
-                    full_topic_url = f"https://www.nairaland.com{topic_href}"
-                    category_text = category_tag.text.strip()
+                    if category_tag and title_link_tag:
+                        category_text = category_tag.text.strip()
+                        topic_title = title_link_tag.text.strip()
+                        topic_href = title_link_tag['href']
+                        full_topic_url = f"https://www.nairaland.com{topic_href}"
 
-                    post_content, shares, likes, replies = get_first_post_content(full_topic_url)
+                        print(f"  Topic {i + 1}: Category='{category_text}', Title='{topic_title}', URL='{full_topic_url}'")  # Debug
 
-                    topics_data.append({
-                        'Username': username,
-                        'Topic Number': i + 1,  # Add a topic number
-                        'Title': topic_title,  # This is now the actual topic title
-                        'Category': category_text,
-                        'URL': full_topic_url,
-                        'Post Content': post_content,
-                        'Shares': shares,
-                        'Likes': likes,
-                        'Replies': replies
-                    })
-                    time.sleep(delay)
+                        post_content, shares, likes, replies = get_first_post_content(full_topic_url)
+
+                        topics_data.append({
+                            'Username': username,
+                            'Topic Number': i + 1,
+                            'Title': topic_title,
+                            'Category': category_text,
+                            'URL': full_topic_url,
+                            'Post Content': post_content,
+                            'Shares': shares,
+                            'Likes': likes,
+                            'Replies': replies
+                        })
+                        time.sleep(delay)
+                    else:
+                        print(f"  Could not find category or title link in row {i + 1}") # Debug
+                else:
+                    print(f"  Could not find the main info cell in row {i + 1}") # Debug
 
         except Exception as e:
             st.warning(f"Error processing page {page + 1}: {str(e)}")
+            print(f"  Error: {str(e)}")  # Debug: Print the exception
             continue
 
     return topics_data
