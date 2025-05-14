@@ -217,7 +217,6 @@ def scrape_user_profile(username):
             print(f"Error fetching profile: {str(e)}")
             continue
     return None
-
 def scrape_user_posts(username, pages=10, delay=1):
     posts_data = []
     registration_date = scrape_user_profile(username)
@@ -240,7 +239,7 @@ def scrape_user_posts(username, pages=10, delay=1):
                         try:
                             # Check if this is a header row
                             header_row = rows[i]
-                            header_cell = header_row.find("td", class_="bold")
+                            header_cell = header_row.find("td")
                             if not header_cell:
                                 i += 1
                                 continue
@@ -262,18 +261,13 @@ def scrape_user_posts(username, pages=10, delay=1):
                             links = header_cell.find_all("a")
                             for link in links:
                                 href = link.get('href', '')
-                                if link.has_attr('name') or href.startswith('/icons'):
-                                    continue
                                 if href.startswith('/') and '#' not in href and not href.endswith('.gif'):
                                     if any(section_id in href for section_id in ['family', 'politics', 'romance', 'sports', 'business', 'health', 'travel', 'foreign-affairs', 'culture', 'education']):
                                         section = link.get_text(strip=True)
-                                        continue
-                                if '#' in href and not section:
-                                    section = link.get_text(strip=True)
-                                elif '#' in href:
-                                    topic = link.get_text(strip=True)
-                                    topic_url = href
-                                    break
+                                    elif '#' in href:
+                                        topic = link.get_text(strip=True)
+                                        topic_url = href
+                                        break
                             # Ensure topic URL is complete
                             if topic_url and not topic_url.startswith("http"):
                                 topic_url = f"https://www.nairaland.com {topic_url}"
@@ -293,18 +287,26 @@ def scrape_user_posts(username, pages=10, delay=1):
                             if not content_row:
                                 i += 1
                                 continue
-                            content_cell = content_row.find("td", id=lambda x: x and x.startswith("pb"))
-                            if not content_cell:
-                                content_cell = content_row.find("td", class_=lambda x: x and "pd" in x.split())
+                            content_cell = content_row.find("td")
                             if not content_cell:
                                 i += 1
                                 continue
-                            # Extract main post content (from <blockquote>)
-                            main_post_blockquote = content_cell.find("blockquote")
-                            main_post_text = clean_text(main_post_blockquote.get_text(separator=" ", strip=True)) if main_post_blockquote else ""
-                            # Extract replies (from <div class="narrow">)
-                            reply_divs = content_cell.find_all("div", class_="narrow")
-                            replies = [clean_text(reply_div.get_text(separator=" ", strip=True)) for reply_div in reply_divs]
+                            # Extract main post content (from <b> inside <blockquote>)
+                            narrow_div = content_cell.find("div", class_="narrow")
+                            main_post_blockquote = narrow_div.find("blockquote") if narrow_div else None
+                            main_post_bold = main_post_blockquote.find("b") if main_post_blockquote else None
+                            main_post_text = clean_text(main_post_bold.get_text(separator=" ", strip=True)) if main_post_bold else ""
+                            # Extract replies (from the next <tr> tag)
+                            reply_texts = []
+                            reply_row = rows[i+2] if i+2 < len(rows) else None
+                            if reply_row:
+                                reply_cell = reply_row.find("td")
+                                if reply_cell:
+                                    reply_links = reply_cell.find_all("a")
+                                    for link in reply_links:
+                                        link_text = link.get_text(strip=True)
+                                        if link_text.startswith("Re"):
+                                            reply_texts.append(clean_text(link_text))
                             # Parse date/time properly
                             post_date, post_time, timestamp = parse_date_time(date_str, time_str)
                             # Extract likes and shares
