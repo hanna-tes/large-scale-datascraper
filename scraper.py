@@ -98,7 +98,7 @@ def scrape_topic_page(url):
     }
 
 def main():
-    st.title("🇳🇬 Nairaland Profile Scraper (Playwright API)")
+    st.title("🇳🇬 Nairaland Profile Scraper
     st.markdown("Enter up to 10 usernames separated by commas (e.g., elusive001,slavaukraini)")
 
     usernames = st.text_input("Usernames (max 10)").split(',')
