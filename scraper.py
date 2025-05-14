@@ -28,20 +28,20 @@ def get_first_post_content(topic_url):
 
         soup = BeautifulSoup(res.text, "html.parser")
 
-        # First post content (Corrected)
-        post_blockquote = soup.find("blockquote", class_="narrow")
+        # First post content
+        post_blockquote = soup.find("div", class_="narrow")
         post_content = post_blockquote.get_text(strip=True)[:500] if post_blockquote else ''
 
-        # Likes & shares (Corrected)
+        # Likes & shares
         likes_span = soup.find('b', id=lambda x: x and x.startswith('lpt'))
         likes = int(likes_span.text.split()[0]) if likes_span else 0
 
         shares_span = soup.find('b', id=lambda x: x and x.startswith('shb'))
         shares = int(shares_span.text.split()[0]) if shares_span else 0
 
-        # Replies (Corrected)
-        reply_rows = soup.select('table[summary="posts"] tr')[1:6]
+        # Replies
         replies = []
+        reply_rows = soup.select('table[summary="posts"] tr')[1:]
         for row in reply_rows:
             post_body_cell = row.find('td', class_='postbody')
             if post_body_cell:
