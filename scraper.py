@@ -222,7 +222,7 @@ def scrape_user_posts(username, pages=10, delay=1):
     posts_data = []
     registration_date = scrape_user_profile(username)
     try:
-        url = f"https://www.nairaland.com/{username}/posts"
+        url = f"https://www.nairaland.com/ {username}/posts"
         for page_num in range(pages):
             for attempt in range(3):
                 try:
@@ -256,10 +256,6 @@ def scrape_user_posts(username, pages=10, delay=1):
                             else:
                                 time_str, date_str = datetime_text, "Today"
                             # Extract section and topic
-                            if not header_cell:
-                                i += 1
-                                continue
-                            #links = header_cell.find_all("a")
                             section = ""
                             topic = ""
                             topic_url = ""
@@ -278,21 +274,9 @@ def scrape_user_posts(username, pages=10, delay=1):
                                     topic = link.get_text(strip=True)
                                     topic_url = href
                                     break
-                                #if href.startswith('/') and not href.startswith('/7') and not link.has_attr('name'):
-                                    #section = link.get_text(strip=True)
-                                #elif '#' in href and not link.has_attr('name') and not href.startswith('/icons'):
-                                    #topic = link.get_text(strip=True)
-                                    #topic_url = link.get('href', '')
-                            #if len(links) >= 1:
-                                #section = links[0].get_text(strip=True)
-                            if not section and len(links) >= 2:
-                                non_user_links = [link for link in links if not link.has_attr('class') or 'user' not in link['class']]
-                                if len(non_user_links) >= 2:
-                                    section = non_user_links[0].get_text(strip=True)
-                                    topic = non_user_links[1].get_text(strip=True)
-                                    topic_url = non_user_links[1].get('href', '')
-                                #topic = links[1].get_text(strip=True)
-                                #topic_url = links[1].get('href', '')
+                            # Ensure topic URL is complete
+                            if topic_url and not topic_url.startswith("http"):
+                                topic_url = f"https://www.nairaland.com {topic_url}"
                             # Get post ID
                             post_id = None
                             for anchor in header_cell.find_all("a"):
@@ -315,12 +299,12 @@ def scrape_user_posts(username, pages=10, delay=1):
                             if not content_cell:
                                 i += 1
                                 continue
-                            # Extract post text
-                            content_div = content_cell.find("div", class_="narrow")
-                            if content_div:
-                                post_text = clean_text(content_div.get_text(separator=" ", strip=True))
-                            else:
-                                post_text = clean_text(content_cell.get_text(strip=True))
+                            # Extract main post content (from <blockquote>)
+                            main_post_blockquote = content_cell.find("blockquote")
+                            main_post_text = clean_text(main_post_blockquote.get_text(separator=" ", strip=True)) if main_post_blockquote else ""
+                            # Extract replies (from <div class="narrow">)
+                            reply_divs = content_cell.find_all("div", class_="narrow")
+                            replies = [clean_text(reply_div.get_text(separator=" ", strip=True)) for reply_div in reply_divs]
                             # Parse date/time properly
                             post_date, post_time, timestamp = parse_date_time(date_str, time_str)
                             # Extract likes and shares
@@ -338,13 +322,14 @@ def scrape_user_posts(username, pages=10, delay=1):
                             posts_data.append({
                                 'post_id': post_id,
                                 'username': username,
-                                'post_text': post_text,
+                                'main_post_text': main_post_text,  # Main post content
+                                'replies': replies,  # Replies as a list
                                 'post_date': post_date,
                                 'post_time': post_time,
                                 'timestamp': timestamp,
                                 'section': section,
                                 'topic': topic,
-                                'topic_url': topic_url,
+                                'topic_url': topic_url,  # Full URL
                                 'likes': likes,
                                 'shares': shares
                             })
@@ -363,7 +348,7 @@ def scrape_user_posts(username, pages=10, delay=1):
                     if not next_page:
                         print(f"No next page found for {username}")
                         break
-                    url = "https://www.nairaland.com" + next_page['href']
+                    url = "https://www.nairaland.com " + next_page['href']
                     print(f"Next page URL: {url}")
                     time.sleep(delay)
                     break
