@@ -376,15 +376,14 @@ def scrape_user_posts(username, pages=10, delay=1):
         'registration_date': registration_date,
         'post_count': len(posts_data)
     }
-def scrape_multiple_users(usernames, pages_per_user=10, max_workers=5, delay=1, global_delay=2):
+def scrape_multiple_users(usernames, pages_per_user=10, max_workers=3, delay=1, global_delay=5):
     results = []
     with st.spinner(f"Scraping data for {len(usernames)} users..."):
         progress_bar = st.progress(0)
-        # Use a wrapper to isolate Streamlit context
         def worker(username):
             try:
-                # Add jitter to the global delay to make request timing less predictable
-                time.sleep(global_delay + random.uniform(-0.5, 0.5))  # Jitter ±0.5 seconds
+                # Add jitter to global delay
+                time.sleep(global_delay + random.uniform(-1, 1))  # Randomized delay
                 return scrape_user_posts(username, pages_per_user, delay)
             except Exception as e:
                 st.error(f"Error processing {username}: {str(e)}")
