@@ -290,8 +290,9 @@ def scrape_user_posts(username, pages=10, delay=1):
                                     anchor['name'].startswith('msg') or
                                     anchor['name'].isdigit()
                                 ):
-                                    post_id = anchor['name']
+                                    post_id = str(anchor['name'])  # ✅ force to string
                                     break
+                            
                             if not post_id:
                                 post_id = f"{username}_{len(posts_data)}"
                             # Extract content from next row
@@ -417,7 +418,7 @@ def save_to_database(data, conn):
             (post_id, username, post_text, post_date, post_time, timestamp, section, topic, topic_url, likes, shares)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ''', (
-                post['post_id'],
+                str(post['post_id']),
                 post['username'],
                 post['post_text'],
                 post['post_date'],
