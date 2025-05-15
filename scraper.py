@@ -79,7 +79,7 @@ def init_db():
         post_text TEXT,
         post_date TEXT,
         post_time TEXT,
-        timestamp INTEGER,
+        timestamp TEXT,
         section TEXT,
         topic TEXT,
         topic_url TEXT,
@@ -134,11 +134,9 @@ def clean_text(text):
 def parse_date_time(date_str, time_str):
     try:
         now = datetime.datetime.now()
-        
         # Clean up strings
         date_str = date_str.strip()
         time_str = time_str.strip()
-        
         if "Today" in date_str:
             date = now.date()
         elif "Yesterday" in date_str:
@@ -161,7 +159,6 @@ def parse_date_time(date_str, time_str):
                     # Parse without year, then add current year
                     date_without_year = datetime.datetime.strptime(date_str, "%b %d")
                     date = date_without_year.replace(year=now.year).date()
-                    
                     # If this date is in the future, use last year
                     if date > now.date():
                         date = date.replace(year=now.year - 1)
@@ -169,14 +166,12 @@ def parse_date_time(date_str, time_str):
                     try:
                         date_without_year = datetime.datetime.strptime(date_str, "%B %d")
                         date = date_without_year.replace(year=now.year).date()
-                        
                         # If this date is in the future, use last year
                         if date > now.date():
                             date = date.replace(year=now.year - 1)
                     except:
                         print(f"Failed to parse date without comma: {date_str}")
                         date = now.date()
-        
         # Parse time (e.g., "10:30am")
         time_match = re.search(r'(\d+):(\d+)([ap]m)', time_str, re.IGNORECASE)
         if time_match:
@@ -190,11 +185,9 @@ def parse_date_time(date_str, time_str):
         else:
             print(f"Failed to parse time: {time_str}")
             time_obj = datetime.time(0, 0)
-        
         # Combine date and time
         datetime_obj = datetime.datetime.combine(date, time_obj)
-        timestamp = int(datetime_obj.timestamp())
-        
+        timestamp = int(datetime_obj.timestamp())  # Ensure this is within SQLite's range
         return date.strftime('%Y-%m-%d'), time_obj.strftime('%H:%M'), timestamp
     except Exception as e:
         print(f"Error parsing date/time: {str(e)}, date_str: {date_str}, time_str: {time_str}")
@@ -423,7 +416,7 @@ def save_to_database(data, conn):
                 post['post_text'],
                 post['post_date'],
                 post['post_time'],
-                post['timestamp'],
+                str(post['timestamp']),
                 post['section'],
                 post['topic'],
                 post['topic_url'],
