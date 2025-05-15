@@ -74,7 +74,7 @@ def init_db():
     # Create posts table
     c.execute('''
     CREATE TABLE IF NOT EXISTS posts (
-        post_id INTEGER PRIMARY KEY AUTOINCREMENT,
+        post_id TEXT PRIMARY KEY,
         username TEXT,
         post_text TEXT,
         post_date TEXT,
