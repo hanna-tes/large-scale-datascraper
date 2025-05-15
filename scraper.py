@@ -218,153 +218,153 @@ def scrape_user_profile(username):
             continue
     return None
 def scrape_user_posts(username, pages=10, delay=1):
-    """
-    Scrapes posts made by a user, handling pagination and errors.
-
-    Args:
-        username (str): The Nairaland username.
-        pages (int, optional): The number of pages to scrape. Defaults to 10.
-        delay (int, optional): Time to wait between requests. Defaults to 1 second.
-
-    Returns:
-        dict: A dictionary containing the username, posts data, registration date and post count.
-                Returns None if an error occurs.
-    """
     posts_data = []
-    registration_date = scrape_user_profile(username) #Gets the registration date
+    registration_date = scrape_user_profile(username)
     try:
         url = f"https://www.nairaland.com/{username}/posts"
         for page_num in range(pages):
-            # Retry logic for each page
             for attempt in range(3):
                 try:
-                    print(f"Scraping page {page_num + 1} for {username}, URL: {url}")
+                    print(f"Scraping page {page_num+1} for {username}, URL: {url}")
                     response = requests.get(url, headers=get_headers(), timeout=10)
-                    response.raise_for_status()  # Raise exception for bad status
-                    break  # If successful, break the retry loop
-                except RequestException as e:
-                    print(f"Attempt {attempt + 1} failed for {url}: {e}")
-                    time.sleep(delay)  # Wait before retrying
-            else:  # This else belongs to the for loop
-                print(f"Failed to retrieve {url} after 3 attempts.")
-                return None  # Return None to indicate failure
-
-            soup = BeautifulSoup(response.content, "html.parser")
-            rows = soup.find_all("tr")
-            i = 0
-            while i < len(rows) - 1:
-                try:
-                    header_row = rows[i]
-                    header_cell = header_row.find("td", class_="bold")
-                    if not header_cell:
-                        i += 1
+                    if response.status_code != 200:
+                        print(f"Error: Status code {response.status_code}")
+                        time.sleep(delay)
                         continue
-
-                    time_span = header_cell.find("span", class_="s")
-                    if not time_span:
-                        i += 1
-                        continue
-                    datetime_text = time_span.get_text(strip=True)
-                    if " On " in datetime_text:
-                        time_str, date_str = datetime_text.split(' On ', 1)
-                    else:
-                        time_str, date_str = datetime_text, "Today"
-
-                    section = ""
-                    topic = ""
-                    topic_url = ""
-                    links = header_cell.find_all("a")
-                    for link in links:
-                        href = link.get('href', '')
-                        if link.has_attr('name') or href.startswith('/icons'):
-                            continue
-                        if href.startswith('/') and '#' not in href and not href.endswith('.gif'):
-                            if any(section_id in href for section_id in ['family', 'politics', 'romance', 'sports', 'business', 'health', 'travel', 'foreign-affairs', 'culture', 'education']):
-                                section = link.get_text(strip=True)
+                    soup = BeautifulSoup(response.content, "html.parser")
+                    # Find all post row pairs (header + content)
+                    rows = soup.find_all("tr")
+                    i = 0
+                    while i < len(rows) - 1:
+                        try:
+                            # Check if this is a header row
+                            header_row = rows[i]
+                            header_cell = header_row.find("td", class_="bold")
+                            if not header_cell:
+                                i += 1
                                 continue
-                        if '#' in href and not section:
-                            section = link.get_text(strip=True)
-                        elif '#' in href:
-                            topic = link.get_text(strip=True)
-                            topic_url = href
+                            # Extract post metadata
+                            time_span = header_cell.find("span", class_="s")
+                            if not time_span:
+                                i += 1
+                                continue
+                            datetime_text = time_span.get_text(strip=True)
+                            # Parse date and time
+                            if " On " in datetime_text:
+                                time_str, date_str = datetime_text.split(' On ', 1)
+                            else:
+                                time_str, date_str = datetime_text, "Today"
+                            # Extract section and topic
+                            if not header_cell:
+                                i += 1
+                                continue
+                            #links = header_cell.find_all("a")
+                           # Initialize variables
+                            section = ""
+                            topic = ""
+                            topic_url = ""
+                            
+                            # Get all <a> tags inside the header cell
+                            links = header_cell.find_all("a")
+                            
+                            # Extract topic and URL
+                            for link in links:
+                                href = link.get('href', '')
+                                # Look for link containing '#' in the href and not a user/profile/icon
+                                if '#' in href and not link.has_attr('class') and not href.startswith('/icons'):
+                                    topic = link.get_text(strip=True)
+                                    topic_url = href
+                                    break  # Stop once the topic link is found
+                            
+                            # Optional: extract section or fallback info
+                            non_user_links = [link for link in links if not (link.has_attr('class') and 'user' in link['class'])]
+                            if len(non_user_links) >= 2:
+                                section = non_user_links[0].get_text(strip=True)
+
+                                #topic = links[1].get_text(strip=True)
+                                #topic_url = links[1].get('href', '')
+                            # Get post ID
+                            post_id = None
+                            for anchor in header_cell.find_all("a"):
+                                if anchor.has_attr('name') and (
+                                    anchor['name'].startswith('msg') or
+                                    anchor['name'].isdigit()
+                                ):
+                                    post_id = anchor['name']
+                                    break
+                            if not post_id:
+                                post_id = f"{username}_{len(posts_data)}"
+                            # Extract content from next row
+                            content_row = rows[i+1] if i+1 < len(rows) else None
+                            if not content_row:
+                                i += 1
+                                continue
+                            content_cell = content_row.find("td", id=lambda x: x and x.startswith("pb"))
+                            if not content_cell:
+                                content_cell = content_row.find("td", class_=lambda x: x and "pd" in x.split())
+                            if not content_cell:
+                                i += 1
+                                continue
+                            # Extract post text
+                            content_div = content_cell.find("div", class_="narrow")
+                            if content_div:
+                                post_text = clean_text(content_div.get_text(separator=" ", strip=True))
+                            else:
+                                post_text = clean_text(content_cell.get_text(strip=True))
+                            # Parse date/time properly
+                            post_date, post_time, timestamp = parse_date_time(date_str, time_str)
+                            # Extract likes and shares
+                            likes, shares = 0, 0
+                            stats_p = content_cell.find("p", class_="s")
+                            if stats_p:
+                                stats_text = stats_p.get_text(strip=True)
+                                likes_match = re.search(r'(\d+) Like', stats_text)
+                                shares_match = re.search(r'(\d+) Share', stats_text)
+                                if likes_match:
+                                    likes = int(likes_match.group(1))
+                                if shares_match:
+                                    shares = int(shares_match.group(1))
+                            # Add to posts data
+                            posts_data.append({
+                                'post_id': post_id,
+                                'username': username,
+                                'post_text': post_text,
+                                'post_date': post_date,
+                                'post_time': post_time,
+                                'timestamp': timestamp,
+                                'section': section,
+                                'topic': topic,
+                                'topic_url': topic_url,
+                                'likes': likes,
+                                'shares': shares
+                            })
+                            # Move to next post (skip content row)
+                            i += 2
+                        except Exception as e:
+                            print(f"Error processing post: {str(e)}")
+                            i += 1
+                            continue
+                    # Find next page link
+                    next_page = None
+                    for a_tag in soup.find_all("a"):
+                        if a_tag.get_text(strip=True) == "Next":
+                            next_page = a_tag
                             break
-                    if not section and len(links) >= 2:
-                        non_user_links = [link for link in links if not link.has_attr('class') or 'user' not in link['class']]
-                        if len(non_user_links) >= 2:
-                            section = non_user_links[0].get_text(strip=True)
-                            topic = non_user_links[1].get_text(strip=True)
-                            topic_url = non_user_links[1].get('href', '')
-                    post_id = None
-                    for anchor in header_cell.find_all("a"):
-                        if anchor.has_attr('name') and (
-                                anchor['name'].startswith('msg') or
-                                anchor['name'].isdigit()
-                        ):
-                            post_id = anchor['name']
-                            break
-                    if not post_id:
-                        post_id = f"{username}_{len(posts_data)}"
-                    content_row = rows[i + 1] if i + 1 < len(rows) else None
-                    if not content_row:
-                        i += 1
-                        continue
-                    content_cell = content_row.find("td", id=lambda x: x and x.startswith("pb"))
-                    if not content_cell:
-                        content_cell = content_row.find("td", class_=lambda x: x and "pd" in x.split())
-                    if not content_cell:
-                        i += 1
-                        continue
-                    # Use the improved post text extraction
-                    post_text = "" # Initialize
-                    content_div = content_cell.find("div", class_="narrow")
-                    if content_div:
-                        post_text = clean_text(content_div.get_text(separator=" ", strip=True))
-                    else:
-                        post_text = clean_text(content_cell.get_text(strip=True))
-                    post_date, post_time, timestamp = parse_date_time(date_str, time_str)
-                    likes, shares = 0, 0
-                    stats_p = content_cell.find("p", class_="s")
-                    if stats_p:
-                        stats_text = stats_p.get_text(strip=True)
-                        likes_match = re.search(r'(\d+) Like', stats_text)
-                        shares_match = re.search(r'(\d+) Share', stats_text)
-                        if likes_match:
-                            likes = int(likes_match.group(1))
-                        if shares_match:
-                            shares = int(shares_match.group(1))
-                    posts_data.append({
-                        'post_id': post_id,
-                        'username': username,
-                        'post_text': post_text,
-                        'post_date': post_date,
-                        'post_time': post_time,
-                        'timestamp': timestamp,
-                        'section': section,
-                        'topic': topic,
-                        'topic_url': topic_url,
-                        'likes': likes,
-                        'shares': shares
-                    })
-                    i += 2
-                except Exception as e:
-                    print(f"Error processing post: {e}")
-                    i += 2 # Important:  Move past the problematic row.
-                    continue
-            # Get the next page
-            next_page = None
-            for a_tag in soup.find_all("a"):
-                if a_tag.get_text(strip=True) == "Next":
-                    next_page = a_tag
+                    if not next_page:
+                        print(f"No next page found for {username}")
+                        break
+                    url = "https://www.nairaland.com" + next_page['href']
+                    print(f"Next page URL: {url}")
+                    time.sleep(delay)
                     break
+                except Exception as e:
+                    print(f"Error on attempt {attempt+1}: {str(e)}")
+                    time.sleep(2)
+            # Break if no next page
             if not next_page:
-                print(f"No next page found for {username}")
                 break
-            url = "https://www.nairaland.com" + next_page['href']
-            print(f"Next page URL: {url}")
-            time.sleep(delay)
     except Exception as e:
-        print(f"Error scraping {username}: {e}")
-        return None  # Return None on major error
+        print(f"Error scraping {username}: {str(e)}")
     print(f"Scraped {len(posts_data)} posts for {username}")
     return {
         'username': username,
