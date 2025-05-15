@@ -1020,7 +1020,7 @@ def main():
         with col1:
             pages_per_user = st.number_input("Pages per user", min_value=1, max_value=50, value=10)
         with col2:
-            max_workers = st.number_input("Concurrent workers", min_value=1, max_value=10, value=5)
+            max_workers = st.number_input("Concurrent workers", min_value=1, max_value=10, value=2)
         with col3:
             delay = st.number_input("Delay between requests (seconds)", min_value=0.5, max_value=5.0, value=1.0, step=0.5)
         
