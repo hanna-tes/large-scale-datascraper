@@ -378,75 +378,7 @@ def scrape_user_posts_refined(username, pages=10, delay=1):
         'registration_date': registration_date,
         'post_count': len(posts_data)
     }
-def scrape_thread_main_post(thread_url):
-    """
-    Scrapes the main post content from a given thread URL.
-    This assumes the main post is typically the first 'postbody' or 'narrow' div.
-    """
-    try:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-        }
 
-        for attempt in range(3):
-            try:
-                response = requests.get(thread_url, headers=headers, timeout=10)
-                response.raise_for_status()
-                break
-            except RequestException as e:
-                print(f"Attempt {attempt + 1} failed for {thread_url}: {str(e)}")
-                time.sleep(2)
-        else:
-            print(f"Failed to retrieve {thread_url} after 3 attempts.")
-            return None
-
-        soup = BeautifulSoup(response.content, "html.parser")
-
-        # Attempt to find the main post. This might require specific Nairaland knowledge.
-        # Often, the main post is the first div with class 'postbody' or 'narrow'
-        # that doesn't belong to a reply.
-        
-        main_post_content = ""
-        main_post_title = ""
-        
-        # Get the title from the page title
-        main_post_title = soup.title.string if soup.title else "No Title"
-
-        # Try to find the first 'postbody' or 'narrow' div that seems like the main post
-        # This part is highly dependent on Nairaland's HTML structure.
-        # You might need to inspect a few thread pages to find a reliable selector.
-        
-        # Common pattern: first div with 'postbody' class or the content of the first post's <td>
-        first_post_div = soup.find("div", class_="postbody") 
-        if not first_post_div:
-            first_post_div = soup.find("div", class_="narrow") # Fallback
-            
-        if first_post_div:
-            main_post_content = clean_text(first_post_div.get_text(separator="\n", strip=True))
-        else:
-            # More generic approach: find the content of the first actual post (not header/footer)
-            # This requires careful inspection of the HTML of a full thread page.
-            # E.g., look for the first <td> with a specific id/class indicating post content.
-            first_content_cell = soup.find("td", id=lambda x: x and x.startswith("pb")) # Assuming 'pb' for post body ID
-            if first_content_cell:
-                 main_post_content = clean_text(first_content_cell.get_text(separator="\n", strip=True))
-            else:
-                 print(f"Could not find main post content for {thread_url}")
-
-
-        # Extract entities from the main post content
-        entities = extract_entities(main_post_content)
-
-        return {
-            "URL": thread_url,
-            "Title": main_post_title,
-            "Content": main_post_content,
-            "Entities": entities,
-            "Timestamp": pd.Timestamp.now()
-        }
-    except Exception as e:
-        print(f"Error scraping main post from {thread_url}: {str(e)}")
-        return None
 def scrape_multiple_users(usernames, pages_per_user=10, max_workers=5, delay=1):
     results = []
     
