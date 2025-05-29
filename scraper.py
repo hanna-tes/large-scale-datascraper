@@ -241,14 +241,7 @@ def scrape_user_posts(username, pages=10, delay=1):
                             if not time_span:
                                 i += 1
                                 continue
-                            
-                            datetime_text = time_span.get_text(strip=True)
-                            # Parse date and time
-                            if " On " in datetime_text:
-                                time_str, date_str = datetime_text.split(' On ', 1)
-                            else:
-                                time_str, date_str = datetime_text, "Today"
-                            
+
                             # Extract section and topic
                             section, topic, topic_url = "", "", ""
                             links = header_cell.find_all("a")
@@ -273,8 +266,8 @@ def scrape_user_posts(username, pages=10, delay=1):
                                     break
                             if not post_id:
                                 post_id = f"{username}_{len(posts_data)}"
-                            
-                            # Extract content from the next row (this should be the actual post content)
+
+                            # Extract content from the next row
                             content_row = rows[i + 1] if i + 1 < len(rows) else None
                             if not content_row:
                                 i += 1
@@ -287,16 +280,20 @@ def scrape_user_posts(username, pages=10, delay=1):
                                 i += 1
                                 continue
                             
-                            # Extract post text
+                            # Extract title from the <b> tag
+                            title_tag = content_cell.find("b")
+                            post_title = title_tag.get_text(strip=True) if title_tag else "Untitled Post"
+                            
+                            # Extract post text from the content row
                             content_div = content_cell.find("div", class_="narrow")
                             if content_div:
                                 post_text = clean_text(content_div.get_text(separator=" ", strip=True))
                             else:
                                 post_text = clean_text(content_cell.get_text(strip=True))
-                            
+
                             # Parse date/time properly
                             post_date, post_time, timestamp = parse_date_time(date_str, time_str)
-                            
+
                             # Extract likes and shares
                             likes, shares = 0, 0
                             stats_p = content_cell.find("p", class_="s")
@@ -313,6 +310,7 @@ def scrape_user_posts(username, pages=10, delay=1):
                             posts_data.append({
                                 'post_id': post_id,
                                 'username': username,
+                                'post_title': post_title,  # Updated to include post title
                                 'post_text': post_text,
                                 'post_date': post_date,
                                 'post_time': post_time,
