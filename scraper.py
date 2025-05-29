@@ -208,7 +208,7 @@ def scrape_user_profile(username):
             continue
     return None
 
-def scrape_user_posts(username, pages=10, delay=1):
+def scrape_user_posts_refined(username, pages=10, delay=1):
     posts_data = []
     registration_date = scrape_user_profile(username)
     try:
@@ -223,74 +223,72 @@ def scrape_user_posts(username, pages=10, delay=1):
                         time.sleep(delay)
                         continue
                     soup = BeautifulSoup(response.content, "html.parser")
-                    # Find all post row pairs (header + content)
                     rows = soup.find_all("tr")
                     i = 0
                     while i < len(rows) - 1:
                         try:
-                            # Check if this is a header row
                             header_row = rows[i]
                             header_cell = header_row.find("td", class_="bold")
                             if not header_cell:
                                 i += 1
                                 continue
-                            # Extract post metadata
                             time_span = header_cell.find("span", class_="s")
                             if not time_span:
                                 i += 1
                                 continue
                             datetime_text = time_span.get_text(strip=True)
-                            # Parse date and time
                             if " On " in datetime_text:
                                 time_str, date_str = datetime_text.split(' On ', 1)
                             else:
                                 time_str, date_str = datetime_text, "Today"
-                            # Extract section and topic
-                            if not header_cell:
-                                i += 1
-                                continue
-                            #links = header_cell.find_all("a")
+
                             section = ""
                             topic = ""
-                            topic_url = ""
+                            user_post_in_thread_url = "" # This will be the URL to the user's *specific post*
+                            base_topic_url = "" # This will be the URL to the *main thread*
+
                             links = header_cell.find_all("a")
+                            
+                            # First, find the link to the user's specific post (the one with #)
                             for link in links:
                                 href = link.get('href', '')
-                                if link.has_attr('name') or href.startswith('/icons'):
-                                    continue
-                                if href.startswith('/') and '#' not in href and not href.endswith('.gif'):
-                                    if any(section_id in href for section_id in [
-                                        'family', 'politics', 'romance', 'sports',
-                                        'business', 'health', 'travel', 'foreign-affairs',
-                                        'culture', 'education'
-                                    ]):
-                                        section = link.get_text(strip=True)
-                                        continue
-                                if '#' in href and not section:
-                                    section = link.get_text(strip=True)
-                                elif '#' in href:
+                                if '#' in href and not href.startswith('/icons'): # Exclude icons if present
+                                    user_post_in_thread_url = "https://www.nairaland.com" + href
+                                    # Extract the base topic URL by removing the #fragment
+                                    base_topic_url = user_post_in_thread_url.split('#')[0]
                                     topic = link.get_text(strip=True)
-                                    # Remove 'Re: ' prefix if present
                                     if topic.startswith('Re: '):
-                                        topic = topic[4:]  # Skip 'Re: ' (4 characters)
-                                    topic_url = href
+                                        topic = topic[4:] # Still strip 'Re:' for the displayed topic name
+                                    break # Found the link to the user's specific post
+
+                            # Now, try to find the section link (which typically doesn't have a #)
+                            # This needs to be more robust. The 'section' link is usually the first non-user, non-# link.
+                            for link in links:
+                                href = link.get('href', '')
+                                if href.startswith('/') and '#' not in href and not link.has_attr('name') and not href.endswith('.gif'):
+                                    section = link.get_text(strip=True)
+                                    # We can stop looking for section once found, unless a specific order is needed
+                                    # Consider if the section link could be the one that also leads to the base topic if it's the first in the list.
+                                    # A more reliable way might be to look for the first link that isn't the user's profile or a reply link.
                                     break
-                                #if href.startswith('/') and not href.startswith('/7') and not link.has_attr('name'):
-                                    #section = link.get_text(strip=True)
-                                #elif '#' in href and not link.has_attr('name') and not href.startswith('/icons'):
-                                    #topic = link.get_text(strip=True)
-                                    #topic_url = link.get('href', '')
-                            #if len(links) >= 1:
-                                #section = links[0].get_text(strip=True)
-                            if not section and len(links) >= 2:
-                                non_user_links = [link for link in links if not link.has_attr('class') or 'user' not in link['class']]
-                                if len(non_user_links) >= 2:
-                                    section = non_user_links[0].get_text(strip=True)
-                                    topic = non_user_links[1].get_text(strip=True)
-                                    topic_url = non_user_links[1].get('href', '')
-                                #topic = links[1].get_text(strip=True)
-                                #topic_url = links[1].get('href', '')
-                            # Get post ID
+
+
+                            # Fallback/refinement for topic and section if the above logic isn't perfect
+                            # This part might need further tweaking based on Nairaland's exact HTML
+                            # You might need to find the specific link that points to the thread title.
+                            # Often, the true topic link is the one that is NOT a reply link (no #) and is not the section link.
+                            if not base_topic_url: # If we couldn't find a # link
+                                for link in links:
+                                    href = link.get('href', '')
+                                    if href.startswith('/') and '#' not in href and not href.startswith('/7') and not link.has_attr('name') and not href.endswith('.gif'):
+                                        # This might be the base topic URL if it's the main link on the line
+                                        base_topic_url = "https://www.nairaland.com" + href
+                                        # You'd need to determine how to get the topic name from this context
+                                        if not topic: # If topic wasn't set by the # link
+                                            topic = link.get_text(strip=True)
+                                        break
+                                        
+                            # (Rest of your existing post metadata extraction)
                             post_id = None
                             for anchor in header_cell.find_all("a"):
                                 if anchor.has_attr('name') and (
@@ -301,7 +299,7 @@ def scrape_user_posts(username, pages=10, delay=1):
                                     break
                             if not post_id:
                                 post_id = f"{username}_{len(posts_data)}"
-                            # Extract content from next row
+
                             content_row = rows[i+1] if i+1 < len(rows) else None
                             if not content_row:
                                 i += 1
@@ -312,15 +310,15 @@ def scrape_user_posts(username, pages=10, delay=1):
                             if not content_cell:
                                 i += 1
                                 continue
-                            # Extract post text
+
                             content_div = content_cell.find("div", class_="narrow")
                             if content_div:
                                 post_text = clean_text(content_div.get_text(separator=" ", strip=True))
                             else:
                                 post_text = clean_text(content_cell.get_text(strip=True))
-                            # Parse date/time properly
+
                             post_date, post_time, timestamp = parse_date_time(date_str, time_str)
-                            # Extract likes and shares
+
                             likes, shares = 0, 0
                             stats_p = content_cell.find("p", class_="s")
                             if stats_p:
@@ -331,27 +329,29 @@ def scrape_user_posts(username, pages=10, delay=1):
                                     likes = int(likes_match.group(1))
                                 if shares_match:
                                     shares = int(shares_match.group(1))
-                            # Add to posts data
+                            
+                            entities = extract_entities(post_text)
+
                             posts_data.append({
                                 'post_id': post_id,
                                 'username': username,
-                                'post_text': post_text,
+                                'post_text': post_text, # This is the user's specific reply text
                                 'post_date': post_date,
                                 'post_time': post_time,
                                 'timestamp': timestamp,
                                 'section': section,
-                                'topic': topic,
-                                'topic_url': topic_url,
+                                'topic': topic, # This is the topic name (might still be stripped 'Re:')
+                                'user_post_in_thread_url': user_post_in_thread_url, # The URL to the user's exact reply
+                                'base_topic_url': base_topic_url, # <--- NEW: The URL of the main thread
                                 'likes': likes,
-                                'shares': shares
+                                'shares': shares,
+                                'entities': entities
                             })
-                            # Move to next post (skip content row)
                             i += 2
                         except Exception as e:
                             print(f"Error processing post: {str(e)}")
                             i += 1
                             continue
-                    # Find next page link
                     next_page = None
                     for a_tag in soup.find_all("a"):
                         if a_tag.get_text(strip=True) == "Next":
@@ -367,18 +367,86 @@ def scrape_user_posts(username, pages=10, delay=1):
                 except Exception as e:
                     print(f"Error on attempt {attempt+1}: {str(e)}")
                     time.sleep(2)
-            # Break if no next page
             if not next_page:
                 break
     except Exception as e:
         print(f"Error scraping {username}: {str(e)}")
-    print(f"Scraped {len(posts_data)} posts for {username}")
+    print(f"Scraped {len(posts_data)} entries for {username}'s posts.")
     return {
         'username': username,
         'posts': posts_data,
         'registration_date': registration_date,
         'post_count': len(posts_data)
     }
+def scrape_thread_main_post(thread_url):
+    """
+    Scrapes the main post content from a given thread URL.
+    This assumes the main post is typically the first 'postbody' or 'narrow' div.
+    """
+    try:
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
+        }
+
+        for attempt in range(3):
+            try:
+                response = requests.get(thread_url, headers=headers, timeout=10)
+                response.raise_for_status()
+                break
+            except RequestException as e:
+                print(f"Attempt {attempt + 1} failed for {thread_url}: {str(e)}")
+                time.sleep(2)
+        else:
+            print(f"Failed to retrieve {thread_url} after 3 attempts.")
+            return None
+
+        soup = BeautifulSoup(response.content, "html.parser")
+
+        # Attempt to find the main post. This might require specific Nairaland knowledge.
+        # Often, the main post is the first div with class 'postbody' or 'narrow'
+        # that doesn't belong to a reply.
+        
+        main_post_content = ""
+        main_post_title = ""
+        
+        # Get the title from the page title
+        main_post_title = soup.title.string if soup.title else "No Title"
+
+        # Try to find the first 'postbody' or 'narrow' div that seems like the main post
+        # This part is highly dependent on Nairaland's HTML structure.
+        # You might need to inspect a few thread pages to find a reliable selector.
+        
+        # Common pattern: first div with 'postbody' class or the content of the first post's <td>
+        first_post_div = soup.find("div", class_="postbody") 
+        if not first_post_div:
+            first_post_div = soup.find("div", class_="narrow") # Fallback
+            
+        if first_post_div:
+            main_post_content = clean_text(first_post_div.get_text(separator="\n", strip=True))
+        else:
+            # More generic approach: find the content of the first actual post (not header/footer)
+            # This requires careful inspection of the HTML of a full thread page.
+            # E.g., look for the first <td> with a specific id/class indicating post content.
+            first_content_cell = soup.find("td", id=lambda x: x and x.startswith("pb")) # Assuming 'pb' for post body ID
+            if first_content_cell:
+                 main_post_content = clean_text(first_content_cell.get_text(separator="\n", strip=True))
+            else:
+                 print(f"Could not find main post content for {thread_url}")
+
+
+        # Extract entities from the main post content
+        entities = extract_entities(main_post_content)
+
+        return {
+            "URL": thread_url,
+            "Title": main_post_title,
+            "Content": main_post_content,
+            "Entities": entities,
+            "Timestamp": pd.Timestamp.now()
+        }
+    except Exception as e:
+        print(f"Error scraping main post from {thread_url}: {str(e)}")
+        return None
 def scrape_multiple_users(usernames, pages_per_user=10, max_workers=5, delay=1):
     results = []
     
