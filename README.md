@@ -1,6 +1,6 @@
 # Data Scraping Dashboard
 
-A Streamlit-based dashboard for analyzing potential coordinated behavior on diffrent news pages.
+A Streamlit-based dashboard for analyzing potential coordinated behavior on Nirraland news pages.
 
 # Features
 - User profile scraping and analysis
